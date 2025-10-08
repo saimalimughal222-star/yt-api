@@ -440,7 +440,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         document.getElementById('p95').textContent = (d.metrics.p95_processing_s||0).toFixed(2);
         document.getElementById('cpm').textContent = d.metrics.conversions_per_min||0;
         document.getElementById('storage').textContent = `${d.metrics.files_count||0} files • ${d.metrics.storage_human||'0 B'}`;
-        document.getElementById('maintLbl').textContent = d.metrics.maintenance? 'Maintenance ON' : '';
+        { const el=document.getElementById('maintLbl'); if(el) el.textContent = d.metrics.maintenance? 'Maintenance ON' : ''; }
         renderActive(d.active||[]);
         renderRecent(d.recent||[]);
         renderFiles(d.files||[]);
