@@ -12,7 +12,8 @@ import (
 func handleHealth(w http.ResponseWriter, r *http.Request) {
     enableCORS(w)
     status := "healthy"
-    if atomic.LoadInt64(&activeJobs) > WorkerPoolSize*2 {
+    // Consider both active and queued jobs as load indicator
+    if atomic.LoadInt64(&activeJobs) >= int64(WorkerPoolSize) || atomic.LoadInt64(&queuedJobs) > int64(JobQueueCapacity/2) {
         status = "overloaded"
     }
     health := HealthStatus{
@@ -40,6 +41,8 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
         "queue_capacity": JobQueueCapacity,
         "rate_limit":     RequestsPerSecond,
         "uptime_seconds": time.Since(serverStartTime).Seconds(),
+        "success_rate":   calculateSuccessRate(),
+        "avg_processing_s": getAvgProcessingTime(),
     }
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(metrics)

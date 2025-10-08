@@ -4,14 +4,22 @@ import (
     "fmt"
     "log"
     "net/http"
+
+    "golang.org/x/time/rate"
 )
 
 func main() {
+    // Load configuration from environment
+    InitConfigFromEnv()
+
     // Initialize Redis
     initRedis()
 
     // Initialize job queue
     jobQueue = make(chan *ConversionJob, JobQueueCapacity)
+
+    // Initialize rate limiter
+    rateLimiter = rate.NewLimiter(rate.Limit(RequestsPerSecond), BurstSize)
 
     // Start worker pool
     for i := 0; i < WorkerPoolSize; i++ {

@@ -5,6 +5,9 @@ import (
     "os"
     "os/signal"
     "syscall"
+    "runtime"
+    "fmt"
+    "strings"
 )
 
 func setupGracefulShutdown() {
@@ -22,14 +25,36 @@ func setupGracefulShutdown() {
 }
 
 func getMemoryUsage() string {
-    return "N/A"
+    var m runtime.MemStats
+    runtime.ReadMemStats(&m)
+    return fmt.Sprintf("Alloc=%d Sys=%d NumGC=%d", m.Alloc, m.Sys, m.NumGC)
 }
 
 func calculateSuccessRate() float64 {
-    // NOTE: Active calculation requires tracking per-job times; simplified here
-    return 0
+    total := completedJobs + failedJobs
+    if total <= 0 {
+        return 0
+    }
+    return float64(completedJobs) / float64(total)
 }
 
 func getAvgProcessingTime() float64 {
-    return 0
+    c := completedJobs
+    if c <= 0 {
+        return 0
+    }
+    return float64(totalProcessingTimeNs) / float64(c) / 1e9
+}
+
+// Basic YouTube URL validator (covers youtu.be and youtube.com/watch)
+func isValidYouTubeURL(u string) bool {
+    if strings.HasPrefix(u, "https://www.youtube.com/watch?") ||
+        strings.HasPrefix(u, "http://www.youtube.com/watch?") ||
+        strings.HasPrefix(u, "https://youtube.com/watch?") ||
+        strings.HasPrefix(u, "http://youtube.com/watch?") ||
+        strings.HasPrefix(u, "https://youtu.be/") ||
+        strings.HasPrefix(u, "http://youtu.be/") {
+        return true
+    }
+    return false
 }

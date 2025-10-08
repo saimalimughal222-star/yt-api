@@ -22,9 +22,10 @@ var (
     queuedJobs    int64
     completedJobs int64
     failedJobs    int64
+    totalProcessingTimeNs int64
 
-    // Rate limiter
-    rateLimiter = rate.NewLimiter(rate.Limit(RequestsPerSecond), BurstSize)
+    // Rate limiter (initialized in main after env config)
+    rateLimiter *rate.Limiter
 
     // Redis client
     redisClient *redis.Client

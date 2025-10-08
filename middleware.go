@@ -6,7 +6,7 @@ import (
 
 func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-        if !rateLimiter.Allow() {
+        if rateLimiter != nil && !rateLimiter.Allow() {
             http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
             return
         }

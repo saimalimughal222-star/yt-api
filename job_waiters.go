@@ -18,7 +18,8 @@ func notifyJobCompletion(job *ConversionJob) {
         case ch <- job:
         default:
         }
-        close(ch)
+        // Ensure idempotent close
+        safeClose(ch)
     }
 }
 
@@ -35,5 +36,11 @@ func unregisterJobWaiter(jobID string, ch chan *ConversionJob) {
     if len(jobWaiters.m[jobID]) == 0 {
         delete(jobWaiters.m, jobID)
     }
+    safeClose(ch)
+}
+
+// safeClose prevents panic on closing an already-closed channel
+func safeClose(ch chan *ConversionJob) {
+    defer func() { _ = recover() }()
     close(ch)
 }
