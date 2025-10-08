@@ -419,6 +419,11 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
       if(!r.ok) throw new Error('http '+r.status);
       return r.json();
     }
+    async function postJSON(u, body){
+      const r = await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+      if(!r.ok) throw new Error('http '+r.status);
+      return r.json();
+    }
     async function refresh(){
       try{
         const d = await fetchJSON('/admin/data');
@@ -435,6 +440,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         document.getElementById('p95').textContent = (d.metrics.p95_processing_s||0).toFixed(2);
         document.getElementById('cpm').textContent = d.metrics.conversions_per_min||0;
         document.getElementById('storage').textContent = `${d.metrics.files_count||0} files • ${d.metrics.storage_human||'0 B'}`;
+        document.getElementById('maintLbl').textContent = d.metrics.maintenance? 'Maintenance ON' : '';
         renderActive(d.active||[]);
         renderRecent(d.recent||[]);
         // legacy list for quick filtering across all jobs snapshot (optional)
@@ -507,6 +513,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         <div class="card"><h3>Conversions / min</h3><div class="big" id="cpm">--</div></div>
         <div class="card"><h3>Storage</h3><div class="big" id="storage">--</div></div>
       </div>
+      <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between;align-items:center"><div class="row"><button onclick="toggleMaint()">Toggle Maintenance</button><span id="maintLbl" style="margin-left:8px;color:#f59e0b"></span></div></div></div>
       <div class="card" style="margin-top:16px">
         <div class="row" style="justify-content:space-between;align-items:center">
           <div class="row"><input id="q" placeholder="Search jobs (id/url/status)" oninput="refresh()"/><select id="filter" onchange="refresh()"><option value="">All</option><option>pending</option><option>processing</option><option>completed</option><option>failed</option></select></div>
@@ -651,3 +658,27 @@ func handleAdminData(w http.ResponseWriter, r *http.Request) {
 // Admin wrappers for actions
 func handleAdminCancel(w http.ResponseWriter, r *http.Request) { handleCancel(w,r) }
 func handleAdminDelete(w http.ResponseWriter, r *http.Request) { handleDelete(w,r) }
+
+// Admin config: POST {maintenance:'toggle'} or {requests_per_second:int, burst_size:int}
+func handleAdminConfig(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+    var body map[string]interface{}
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil { http.Error(w, "Invalid JSON", http.StatusBadRequest); return }
+    if v, ok := body["maintenance"]; ok {
+        if s, ok2 := v.(string); ok2 && s == "toggle" {
+            MaintenanceMode = !MaintenanceMode
+        }
+    }
+    if v, ok := body["requests_per_second"]; ok {
+        if f, ok2 := v.(float64); ok2 && f > 0 {
+            RequestsPerSecond = int(f)
+        }
+    }
+    if v, ok := body["burst_size"]; ok {
+        if f, ok2 := v.(float64); ok2 && f > 0 {
+            BurstSize = int(f)
+        }
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{"maintenance":MaintenanceMode,"requests_per_second":RequestsPerSecond,"burst_size":BurstSize})
+}
