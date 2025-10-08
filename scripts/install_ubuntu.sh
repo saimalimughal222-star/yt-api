@@ -280,6 +280,21 @@ fi
 # Write environment file for systemd and create service
 REQUESTS_PER_SECOND=${REQUESTS_PER_SECOND}
 BURST_SIZE=${BURST_SIZE}
+# Prompt admin credentials before writing env
+echo
+echo "=== Admin UI Credentials (/admin) ==="
+echo "You can protect /admin with Basic Auth. Leave username empty to disable /admin."
+ADMIN_USER=$(read_with_default "Admin username (blank = disable /admin)" "")
+if [[ -n "${ADMIN_USER}" ]]; then
+  while true; do
+    read -s -p "Admin password: " ADMIN_PASS; echo
+    read -s -p "Confirm password: " ADMIN_PASS2; echo
+    if [[ "${ADMIN_PASS}" == "${ADMIN_PASS2}" && -n "${ADMIN_PASS}" ]]; then break; fi
+    echo "Passwords do not match or empty. Try again."
+  done
+else
+  ADMIN_PASS=""
+fi
 cat >"${ENV_FILE}" <<EOF
 REDIS_ADDR=${REDIS_ADDR}
 REQUESTS_PER_SECOND=${REQUESTS_PER_SECOND}
@@ -298,6 +313,8 @@ PER_IP_BURST=${PER_IP_BURST}
 BACKOFF_BASE_SECONDS=${BACKOFF_BASE_SECONDS}
 BACKOFF_MAX_SECONDS=${BACKOFF_MAX_SECONDS}
 MAX_DURATION_MIN=${MAX_DURATION_MIN}
+ADMIN_USER=${ADMIN_USER}
+ADMIN_PASS=${ADMIN_PASS}
 EOF
 chmod 0644 "${ENV_FILE}"
 
