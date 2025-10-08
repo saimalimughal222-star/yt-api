@@ -14,6 +14,7 @@ import (
     "strings"
     "strconv"
     "sort"
+    "math"
 )
 
 func handleExtract(w http.ResponseWriter, r *http.Request) {
@@ -423,8 +424,32 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         document.getElementById('rate').textContent = d.metrics.rate_limit;
         document.getElementById('queueCap').textContent = d.metrics.queue_capacity;
         document.getElementById('mem').textContent = d.health.memory_usage;
-        renderJobs(d.jobs);
+        document.getElementById('p50').textContent = (d.metrics.p50_processing_s||0).toFixed(2);
+        document.getElementById('p95').textContent = (d.metrics.p95_processing_s||0).toFixed(2);
+        renderActive(d.active||[]);
+        renderRecent(d.recent||[]);
+        // legacy list for quick filtering across all jobs snapshot (optional)
+        const flat = (d.recent||[]).map(x=>({id:x.id,status:'completed',url:x.url,created_at:x.completed_at}));
+        renderJobs(flat);
       }catch(e){console.error(e)}
+    }
+    function renderActive(items){
+      const tbody = document.getElementById('activeJobs');
+      tbody.innerHTML='';
+      items.forEach(j=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${j.id}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.started_at}</td><td>${j.elapsed_sec}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    function renderRecent(items){
+      const tbody = document.getElementById('recentJobs');
+      tbody.innerHTML='';
+      items.forEach(j=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${j.id}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.completed_at}</td><td>${j.duration_sec}</td><td>${j.download_url?`<a href=\"${j.download_url}\" target=\"_blank\">Download</a>`:''}</td>`;
+        tbody.appendChild(tr);
+      });
     }
     function renderJobs(items){
       const q = document.getElementById('q').value.toLowerCase();
@@ -435,7 +460,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         if(q && !(j.id.includes(q)||j.url.includes(q)||j.status.includes(q))) return;
         if(st && j.status!==st) return;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${j.id}</td><td>${j.status}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.created_at}</td>
+        tr.innerHTML = `<td>${j.id}</td><td>${j.status}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.created_at||''}</td>
         <td><div class="row"><button onclick="cancelJob('${j.id}')">Cancel</button><button onclick="deleteJob('${j.id}')">Delete</button></div></td>`;
         tbody.appendChild(tr);
       });
@@ -467,12 +492,24 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         <div class="card"><h3>Queue Capacity</h3><div class="big" id="queueCap">--</div></div>
         <div class="card" style="grid-column: span 4"><h3>Memory</h3><div id="mem">--</div></div>
       </div>
+      <div class="grid" style="margin-top:16px">
+        <div class="card"><h3>p50 Processing (s)</h3><div class="big" id="p50">--</div></div>
+        <div class="card"><h3>p95 Processing (s)</h3><div class="big" id="p95">--</div></div>
+      </div>
       <div class="card" style="margin-top:16px">
         <div class="row" style="justify-content:space-between;align-items:center">
           <div class="row"><input id="q" placeholder="Search jobs (id/url/status)" oninput="refresh()"/><select id="filter" onchange="refresh()"><option value="">All</option><option>pending</option><option>processing</option><option>completed</option><option>failed</option></select></div>
           <div>Total jobs displayed: <span id="count">0</span></div>
         </div>
         <table style="margin-top:8px"><thead><tr><th>ID</th><th>Status</th><th>URL</th><th>Created</th><th>Actions</th></tr></thead><tbody id="jobs"></tbody></table>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Active Jobs (elapsed seconds)</h3>
+        <table><thead><tr><th>ID</th><th>URL</th><th>Started</th><th>Elapsed (s)</th></tr></thead><tbody id="activeJobs"></tbody></table>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Recent Completed</h3>
+        <table><thead><tr><th>ID</th><th>URL</th><th>Completed</th><th>Duration (s)</th><th>Download</th></tr></thead><tbody id="recentJobs"></tbody></table>
       </div>
     </div>
     </body></html>`)
@@ -495,6 +532,48 @@ func handleAdminData(w http.ResponseWriter, r *http.Request) {
     if health.ActiveJobs >= int64(WorkerPoolSize) || health.QueuedJobs > int64(JobQueueCapacity/2) {
         health.Status = "overloaded"
     }
+    // Build job views
+    jobStore.RLock()
+    all := make([]*ConversionJob, 0, len(jobStore.jobs))
+    for _, j := range jobStore.jobs { all = append(all, j) }
+    jobStore.RUnlock()
+
+    // Active jobs (processing) sorted by StartedAt desc
+    type activeDTO struct{ ID, URL, StartedAt string; ElapsedSec int64 }
+    act := make([]activeDTO, 0)
+    now := time.Now()
+    for _, j := range all {
+        if j.Status == StatusProcessing && !j.StartedAt.IsZero() {
+            act = append(act, activeDTO{ID:j.ID, URL:j.URL, StartedAt:j.StartedAt.Format(time.RFC3339), ElapsedSec:int64(now.Sub(j.StartedAt).Seconds())})
+        }
+    }
+    sort.Slice(act, func(i,j int) bool { return act[i].ElapsedSec > act[j].ElapsedSec })
+    if len(act) > 200 { act = act[:200] }
+
+    // Recent completed jobs sorted by CompletedAt desc
+    type recentDTO struct{ ID, URL, CompletedAt string; DurationSec int64; DownloadURL string }
+    rec := make([]recentDTO, 0)
+    durations := make([]float64, 0)
+    for _, j := range all {
+        if j.Status == StatusCompleted && !j.CompletedAt.IsZero() && !j.StartedAt.IsZero() {
+            dur := j.CompletedAt.Sub(j.StartedAt).Seconds()
+            durations = append(durations, dur)
+            rec = append(rec, recentDTO{ID:j.ID, URL:j.URL, CompletedAt:j.CompletedAt.Format(time.RFC3339), DurationSec:int64(dur), DownloadURL:j.DownloadURL})
+        }
+    }
+    sort.Slice(rec, func(i,j int) bool { return rec[i].CompletedAt > rec[j].CompletedAt })
+    if len(rec) > 200 { rec = rec[:200] }
+
+    // Percentiles
+    p50, p95 := 0.0, 0.0
+    if len(durations) > 0 {
+        sort.Float64s(durations)
+        idx50 := int(math.Ceil(0.50*float64(len(durations)))) - 1; if idx50 < 0 { idx50 = 0 }
+        idx95 := int(math.Ceil(0.95*float64(len(durations)))) - 1; if idx95 < 0 { idx95 = 0 }
+        p50 = durations[idx50]
+        p95 = durations[idx95]
+    }
+
     metrics := map[string]interface{}{
         "active_jobs":    health.ActiveJobs,
         "queued_jobs":    health.QueuedJobs,
@@ -506,21 +585,12 @@ func handleAdminData(w http.ResponseWriter, r *http.Request) {
         "uptime_seconds": time.Since(serverStartTime).Seconds(),
         "success_rate":   calculateSuccessRate(),
         "avg_processing_s": getAvgProcessingTime(),
+        "p50_processing_s": p50,
+        "p95_processing_s": p95,
     }
-    // Jobs list (limit 200, sorted by CreatedAt desc)
-    jobStore.RLock()
-    arr := make([]*ConversionJob, 0, len(jobStore.jobs))
-    for _, j := range jobStore.jobs { arr = append(arr, j) }
-    jobStore.RUnlock()
-    sort.Slice(arr, func(i,j int) bool { return arr[i].CreatedAt.After(arr[j].CreatedAt) })
-    if len(arr) > 200 { arr = arr[:200] }
-    type jdto struct{ ID, URL, Status, CreatedAt string }
-    out := make([]jdto, 0, len(arr))
-    for _, j := range arr {
-        out = append(out, jdto{ID:j.ID, URL:j.URL, Status:string(j.Status), CreatedAt:j.CreatedAt.Format(time.RFC3339)})
-    }
+
     w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(map[string]interface{}{"health":health,"metrics":metrics,"jobs":out})
+    json.NewEncoder(w).Encode(map[string]interface{}{"health":health,"metrics":metrics,"active":act,"recent":rec})
 }
 
 // Admin wrappers for actions
