@@ -56,9 +56,9 @@ chown -R ${APP_USER}:${APP_GROUP} "${INSTALL_DIR}"
 chown ${APP_USER}:${APP_GROUP} "${BIN_PATH}"
 chmod 0755 "${BIN_PATH}"
 
-# Create downloads dir
-mkdir -p /var/lib/${APP_NAME}/downloads
-chown -R ${APP_USER}:${APP_GROUP} /var/lib/${APP_NAME}
+# Create downloads dir inside install root
+mkdir -p ${INSTALL_DIR}/downloads
+chown -R ${APP_USER}:${APP_GROUP} ${INSTALL_DIR}
 
 # Systemd detection (we will create service later after prompts)
 HAS_SYSTEMD=false
@@ -90,6 +90,19 @@ WORKER_POOL_SIZE=$(read_with_default "Worker pool size" "20")
 JOB_QUEUE_CAPACITY=$(read_with_default "Job queue capacity" "1000")
 REQUESTS_PER_SECOND=$(read_with_default "App rate limit (req/s)" "100")
 BURST_SIZE=$(read_with_default "App rate burst" "200")
+
+# Optional: clear previous data before starting (Redis keys and downloads)
+if ask_yes_no "Clear existing data now (Redis job/url keys and downloads folder)?" Y; then
+  echo "Clearing downloads in ${INSTALL_DIR}/downloads ..."
+  rm -rf ${INSTALL_DIR}/downloads/* || true
+  if command -v redis-cli >/dev/null 2>&1; then
+    echo "Clearing Redis keys job:* and url:* on localhost:6379 ..."
+    redis-cli --scan --pattern 'job:*' | xargs -r redis-cli del || true
+    redis-cli --scan --pattern 'url:*' | xargs -r redis-cli del || true
+  else
+    echo "redis-cli not found; skipping Redis key cleanup"
+  fi
+fi
 
 if ask_yes_no "Configure Nginx reverse proxy (domain or IP)?" Y; then
   DOMAIN=$(read_with_default "Enter domain (blank = use server IP)" "")
@@ -169,7 +182,7 @@ EOF
 chmod 0644 "${ENV_FILE}"
 
 if [[ "${HAS_SYSTEMD}" == "true" ]]; then
-cat >"${SERVICE_FILE}" <<'EOF'
+cat >"${SERVICE_FILE}" <<EOF
 [Unit]
 Description=YouTube to MP3 API
 After=network.target redis-server.service
@@ -177,10 +190,10 @@ After=network.target redis-server.service
 [Service]
 User=ytmp3
 Group=ytmp3
-EnvironmentFile=/etc/ytmp3-api.env
+EnvironmentFile=${ENV_FILE}
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 ExecStart=/usr/local/bin/ytmp3-api
-WorkingDirectory=/var/lib/ytmp3-api
+WorkingDirectory=${INSTALL_DIR}
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=65536
@@ -197,14 +210,14 @@ systemctl daemon-reload
 systemctl enable ${APP_NAME}.service
 systemctl restart ${APP_NAME}.service
 else
-  cat >"/usr/local/bin/${APP_NAME}-run" <<'EOF'
+  cat >"/usr/local/bin/${APP_NAME}-run" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-source /etc/ytmp3-api.env || true
-cd /var/lib/ytmp3-api
-nohup /usr/local/bin/ytmp3-api >/var/lib/ytmp3-api/ytmp3-api.log 2>&1 &
-echo $! > /var/lib/ytmp3-api/ytmp3-api.pid
-echo "Started ytmp3-api (PID $(cat /var/lib/ytmp3-api/ytmp3-api.pid))"
+source ${ENV_FILE} || true
+cd ${INSTALL_DIR}
+nohup /usr/local/bin/ytmp3-api >${INSTALL_DIR}/ytmp3-api.log 2>&1 &
+echo $! > ${INSTALL_DIR}/ytmp3-api.pid
+echo "Started ytmp3-api (PID $(cat ${INSTALL_DIR}/ytmp3-api.pid))"
 EOF
   chmod +x "/usr/local/bin/${APP_NAME}-run"
   "/usr/local/bin/${APP_NAME}-run" || true
