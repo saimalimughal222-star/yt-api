@@ -42,6 +42,10 @@ var (
 	// Retry/backoff
 	BackoffBaseSeconds = 5
 	BackoffMaxSeconds  = 60
+
+	// Admin UI credentials
+	AdminUser = ""
+	AdminPass = ""
 )
 
 func envInt(key string, def int) int {
@@ -106,4 +110,7 @@ func InitConfigFromEnv() {
 
 	BackoffBaseSeconds = envInt("BACKOFF_BASE_SECONDS", BackoffBaseSeconds)
 	BackoffMaxSeconds = envInt("BACKOFF_MAX_SECONDS", BackoffMaxSeconds)
+
+	AdminUser = envString("ADMIN_USER", AdminUser)
+	AdminPass = envString("ADMIN_PASS", AdminPass)
 }

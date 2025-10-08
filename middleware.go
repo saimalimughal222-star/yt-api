@@ -5,6 +5,7 @@ import (
     "strings"
     "time"
     "golang.org/x/time/rate"
+    "encoding/base64"
 )
 
 func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -92,4 +93,31 @@ func backoffForRetry(retry int) time.Duration {
         sec = 1
     }
     return time.Duration(sec) * time.Second
+}
+
+func basicAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        if AdminUser == "" || AdminPass == "" {
+            http.Error(w, "Admin auth not configured", http.StatusForbidden)
+            return
+        }
+        auth := r.Header.Get("Authorization")
+        const prefix = "Basic "
+        if !strings.HasPrefix(auth, prefix) {
+            w.Header().Set("WWW-Authenticate", "Basic realm=\"admin\"")
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        payload, err := base64.StdEncoding.DecodeString(auth[len(prefix):])
+        if err != nil {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        parts := strings.SplitN(string(payload), ":", 2)
+        if len(parts) != 2 || parts[0] != AdminUser || parts[1] != AdminPass {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next(w, r)
+    }
 }

@@ -301,3 +301,67 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
         }
     }
 }
+
+// Simple docs pages
+func handleDocs(w http.ResponseWriter, r *http.Request) {
+    enableCORS(w)
+    if r.Method != http.MethodGet { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+    w.Header().Set("Content-Type", "text/html; charset=utf-8")
+    io.WriteString(w, `<!doctype html><html><head><meta charset="utf-8"><title>YT MP3 API Docs</title><style>body{font-family:sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;}</style></head><body>
+    <h1>YouTube to MP3 API - Documentation</h1>
+    <p>High-level guide for backend integration.</p>
+    <h2>Endpoints</h2>
+    <ul>
+      <li><code>POST /extract</code> - Start conversion. Body: { url, idempotency_key?, callback_url? }</li>
+      <li><code>GET /status/{job_id}</code> - Check job status.</li>
+      <li><code>GET /download/{job_id}.mp3</code> - Download MP3 (Range supported).</li>
+      <li><code>GET /health</code>, <code>/metrics</code>, <code>/stats</code> - Monitoring.</li>
+    </ul>
+    <h2>Auth</h2>
+    <p>If enabled, send <code>X-API-Key: &lt;your_key&gt;</code> header.</p>
+    <h2>Notes</h2>
+    <ul>
+      <li>Provide valid YouTube URL (shorts and embed supported).</li>
+      <li>Repeated requests for same video are deduped.</li>
+      <li>Files are short-lived and may be deleted ~10 minutes after completion.</li>
+    </ul>
+    <p>Frontend-focused docs: <a href="/docs/frontend">/docs/frontend</a></p>
+    </body></html>`)
+}
+
+func handleDocsFrontend(w http.ResponseWriter, r *http.Request) {
+    enableCORS(w)
+    if r.Method != http.MethodGet { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+    w.Header().Set("Content-Type", "text/html; charset=utf-8")
+    io.WriteString(w, `<!doctype html><html><head><meta charset="utf-8"><title>Frontend Integration</title><style>body{font-family:sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;}</style></head><body>
+    <h1>Frontend Integration</h1>
+    <p>Use fetch with CORS. Example:</p>
+    <pre><code>fetch('/extract',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':'YOUR_KEY'},body:JSON.stringify({url})})
+ .then(r=>r.json())
+ .then(({job_id})=>pollStatus(job_id))</code></pre>
+    <p>Poll status every few seconds. When status = completed, navigate to <code>/download/{job_id}.mp3</code>.</p>
+    </body></html>`)
+}
+
+// Minimal admin dashboard (basic auth protected)
+func handleAdmin(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+    w.Header().Set("Content-Type", "text/html; charset=utf-8")
+    io.WriteString(w, `<!doctype html><html><head><meta charset="utf-8"><title>Admin</title>
+    <style>body{font-family:sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px}</style>
+    <script>
+    async function refresh(){
+      const h = await fetch('/health',{headers:{'Authorization':localStorage.auth||''}}).then(r=>r.json()).catch(()=>({}));
+      const m = await fetch('/metrics',{headers:{'Authorization':localStorage.auth||''}}).then(r=>r.json()).catch(()=>({}));
+      document.getElementById('health').textContent = JSON.stringify(h,null,2);
+      document.getElementById('metrics').textContent = JSON.stringify(m,null,2);
+    }
+    setInterval(refresh, 3000);
+    window.onload=refresh;
+    </script></head><body>
+    <h1>Admin Dashboard</h1>
+    <p>Live server state, health, and metrics.</p>
+    <h2>Health</h2><pre id="health">loading...</pre>
+    <h2>Metrics</h2><pre id="metrics">loading...</pre>
+    </body></html>`)
+}
