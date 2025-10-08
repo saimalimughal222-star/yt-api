@@ -4,7 +4,6 @@ import (
     "encoding/json"
     "fmt"
     "log"
-    "time"
 
     redis "github.com/redis/go-redis/v9"
     xxhash "github.com/cespare/xxhash/v2"
