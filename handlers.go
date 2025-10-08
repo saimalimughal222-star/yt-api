@@ -683,7 +683,7 @@ func handleAdminData(w http.ResponseWriter, r *http.Request) {
     }
 
     // Storage stats (downloads dir)
-    downloadsDir := filepath.Join(".", "downloads")
+    downloadsDir := "/app/downloads"
     filesCount := 0
     var totalBytes int64
     type fileDTO struct{ ID, Name string; SizeBytes int64; SizeHuman string; DeleteInSec int64 }
