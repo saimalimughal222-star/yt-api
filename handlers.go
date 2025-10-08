@@ -31,7 +31,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Invalid JSON", http.StatusBadRequest)
         return
     }
-    if req.URL == "" {
+    if req.URL == "" || len(req.URL) > MaxURLLength {
         http.Error(w, "Missing YouTube URL", http.StatusBadRequest)
         return
     }
@@ -42,8 +42,12 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
     }
 
     // Canonicalize URL (supports Shorts, embed, youtu.be, mobile)
+    var videoID string
     if canon, ok := canonicalizeYouTubeURL(req.URL); ok {
         req.URL = canon
+        if vid, ok2 := extractYouTubeVideoID(canon); ok2 {
+            videoID = vid
+        }
     }
 
     // Prefer Redis-based dedupe first
@@ -75,10 +79,12 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
     job := &ConversionJob{
         ID:         jobID,
         URL:        req.URL,
+        VideoID:    videoID,
         Status:     StatusPending,
         CreatedAt:  time.Now(),
         MaxRetries: MaxJobRetries,
         Priority:   1,
+        CallbackURL: req.CallbackURL,
     }
 
     jobStore.Lock()
@@ -102,6 +108,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
                     "status": string(doneJob.Status),
                     "download_url": doneJob.DownloadURL,
                     "check_status_endpoint": fmt.Sprintf("http://localhost:8080/status/%s", jobID),
+                    "canonical_url": job.URL,
                 })
             } else {
                 json.NewEncoder(w).Encode(map[string]interface{}{
@@ -109,6 +116,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
                     "status": string(doneJob.Status),
                     "error": doneJob.Error,
                     "check_status_endpoint": fmt.Sprintf("http://localhost:8080/status/%s", jobID),
+                    "canonical_url": job.URL,
                 })
             }
         case <-time.After(FastPathWait):
@@ -117,6 +125,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
                 "job_id": jobID,
                 "status": string(job.Status),
                 "check_status_endpoint": fmt.Sprintf("http://localhost:8080/status/%s", jobID),
+                "canonical_url": job.URL,
             })
         }
     default:
@@ -209,36 +218,68 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Mark download in progress to avoid deletion during streaming
+    downloadTrackers.Lock()
+    downloadTrackers.inProgress[job.ID]++
+    downloadTrackers.Unlock()
+
     file, err := os.Open(job.FilePath)
     if err != nil {
+        downloadTrackers.Lock()
+        downloadTrackers.inProgress[job.ID]--
+        if downloadTrackers.inProgress[job.ID] <= 0 { delete(downloadTrackers.inProgress, job.ID) }
+        downloadTrackers.Unlock()
         http.Error(w, "Error opening file", http.StatusInternalServerError)
         return
     }
-    defer file.Close()
+    defer func() {
+        file.Close()
+        downloadTrackers.Lock()
+        downloadTrackers.inProgress[job.ID]--
+        if downloadTrackers.inProgress[job.ID] <= 0 { delete(downloadTrackers.inProgress, job.ID) }
+        downloadTrackers.Unlock()
+    }()
 
+    // Range support
+    fi, _ := file.Stat()
+    size := fi.Size()
+    w.Header().Set("Accept-Ranges", "bytes")
     w.Header().Set("Content-Type", "audio/mpeg")
     w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filenameWithExt))
     w.Header().Set("Cache-Control", "public, max-age=3600")
+
+    if rng := r.Header.Get("Range"); rng != "" {
+        // Simple bytes=START-
+        if strings.HasPrefix(rng, "bytes=") {
+            parts := strings.TrimPrefix(rng, "bytes=")
+            if strings.HasSuffix(parts, "-") {
+                startStr := strings.TrimSuffix(parts, "-")
+                if start, err := strconv.ParseInt(startStr, 10, 64); err == nil && start < size {
+                    w.WriteHeader(http.StatusPartialContent)
+                    w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, size-1, size))
+                    file.Seek(start, 0)
+                    io.Copy(w, file)
+                    return
+                }
+            }
+        }
+    }
+
+    // Full body
+    w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
     io.Copy(w, file)
 
     // Schedule deletion 10 minutes after first successful download
     if job.FirstDownloadedAt.IsZero() {
         job.FirstDownloadedAt = time.Now()
         saveJobToRedis(job)
-        go func(j *ConversionJob) {
-            time.Sleep(10 * time.Minute)
-            // Re-check file exists and delete
-            if j.FilePath != "" {
-                _ = os.Remove(j.FilePath)
-            }
-            // Remove from store
-            jobStore.Lock()
-            delete(jobStore.jobs, j.ID)
-            jobStore.Unlock()
-            deleteJobFromRedis(j.ID)
-            if j.URL != "" {
-                removeURLMapping(j.URL)
-            }
-        }(job)
+        // Schedule deletion if not already scheduled
+        downloadTrackers.Lock()
+        already := downloadTrackers.scheduled[job.ID]
+        if !already { downloadTrackers.scheduled[job.ID] = true }
+        downloadTrackers.Unlock()
+        if !already {
+            go scheduleSafeDeletion(job)
+        }
     }
 }

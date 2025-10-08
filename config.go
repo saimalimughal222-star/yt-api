@@ -30,6 +30,18 @@ var (
 
 	// Fast-path response: wait briefly for quick jobs
 	FastPathWait = 8 * time.Second
+
+	// Security & Abuse
+	AllowedOrigins     = "*" // comma-separated
+	RequireAPIKey      = false
+	APIKeysCSV         = ""   // comma-separated list
+	PerIPRPS           = 10
+	PerIPBurst         = 20
+	MaxURLLength       = 2048
+
+	// Retry/backoff
+	BackoffBaseSeconds = 5
+	BackoffMaxSeconds  = 60
 )
 
 func envInt(key string, def int) int {
@@ -84,4 +96,14 @@ func InitConfigFromEnv() {
 
 	HealthCheckInterval = envDuration("HEALTH_CHECK_INTERVAL", HealthCheckInterval)
 	FastPathWait = envDuration("FAST_PATH_WAIT", FastPathWait)
+
+	AllowedOrigins = envString("ALLOWED_ORIGINS", AllowedOrigins)
+	RequireAPIKey = envString("REQUIRE_API_KEY", "false") == "true"
+	APIKeysCSV = envString("API_KEYS", APIKeysCSV)
+	PerIPRPS = envInt("PER_IP_RPS", PerIPRPS)
+	PerIPBurst = envInt("PER_IP_BURST", PerIPBurst)
+	MaxURLLength = envInt("MAX_URL_LENGTH", MaxURLLength)
+
+	BackoffBaseSeconds = envInt("BACKOFF_BASE_SECONDS", BackoffBaseSeconds)
+	BackoffMaxSeconds = envInt("BACKOFF_MAX_SECONDS", BackoffMaxSeconds)
 }

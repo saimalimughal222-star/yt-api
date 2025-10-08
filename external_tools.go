@@ -46,6 +46,18 @@ func getAudioStreamFromYTDLP(videoURL string) (string, *Metadata, error) {
         return "", nil, fmt.Errorf("yt-dlp metadata parse error: %v", err)
     }
 
+    // Enforce optional max duration (e.g., 90 minutes) via env guard
+    if info.Duration > 0 {
+        // Max duration in seconds if env MAX_DURATION_MIN is set
+        if maxMinStr := os.Getenv("MAX_DURATION_MIN"); maxMinStr != "" {
+            if mm, err := strconv.Atoi(maxMinStr); err == nil && mm > 0 {
+                if info.Duration > float64(mm*60) {
+                    return "", nil, fmt.Errorf("video duration exceeds max %d minutes", mm)
+                }
+            }
+        }
+    }
+
     candidates := make([]ytdlpFormat, 0, len(info.Formats))
     for _, f := range info.Formats {
         if f.URL == "" {

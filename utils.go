@@ -110,3 +110,34 @@ func isValidYouTubeURL(raw string) bool {
     _, ok := extractYouTubeVideoID(raw)
     return ok
 }
+
+// Schedules deletion 10 minutes after completion unless an active download is in progress.
+// If a download starts, FirstDownloadedAt gets set and deletion still happens after 10 minutes from that mark.
+func scheduleSafeDeletion(job *ConversionJob) {
+    // Wait window
+    time.Sleep(10 * time.Minute)
+    if job == nil || job.FilePath == "" {
+        return
+    }
+    // If download in progress, delay until finished (simple wait loop with cap)
+    for i := 0; i < 60; i++ { // up to ~10 minutes more
+        downloadTrackers.Lock()
+        inProg := downloadTrackers.inProgress[job.ID]
+        downloadTrackers.Unlock()
+        if inProg <= 0 {
+            break
+        }
+        time.Sleep(10 * time.Second)
+    }
+    // Remove file
+    _ = os.Remove(job.FilePath)
+    // Remove from memory
+    jobStore.Lock()
+    delete(jobStore.jobs, job.ID)
+    jobStore.Unlock()
+    // Remove from Redis and URL map
+    deleteJobFromRedis(job.ID)
+    if job.URL != "" {
+        removeURLMapping(job.URL)
+    }
+}

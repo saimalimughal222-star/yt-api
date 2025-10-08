@@ -14,6 +14,8 @@ type Metadata struct {
 type Request struct {
     URL          string `json:"url"`
     CaptchaToken string `json:"captcha_token,omitempty"`
+    IdempotencyKey string `json:"idempotency_key,omitempty"`
+    CallbackURL   string `json:"callback_url,omitempty"`
 }
 
 type JobStatus string
@@ -28,6 +30,7 @@ const (
 type ConversionJob struct {
     ID          string     `json:"id"`
     URL         string     `json:"url"`
+    VideoID     string     `json:"video_id"`
     Status      JobStatus  `json:"status"`
     CreatedAt   time.Time  `json:"created_at"`
     StartedAt   time.Time  `json:"started_at"`
@@ -40,6 +43,7 @@ type ConversionJob struct {
     Retries     int        `json:"retries"`
     MaxRetries  int        `json:"max_retries"`
     Priority    int        `json:"priority"`
+    CallbackURL string     `json:"callback_url,omitempty"`
 }
 
 type HealthStatus struct {

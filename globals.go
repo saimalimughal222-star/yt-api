@@ -27,6 +27,22 @@ var (
     // Rate limiter (initialized in main after env config)
     rateLimiter *rate.Limiter
 
+    // Per-IP rate limiters
+    ipLimiters = struct {
+        sync.Mutex
+        m map[string]*rate.Limiter
+    }{m: make(map[string]*rate.Limiter)}
+
+    // API keys set
+    apiKeys = map[string]struct{}{}
+
+    // Download trackers and deletion scheduling guards
+    downloadTrackers = struct {
+        sync.Mutex
+        inProgress map[string]int
+        scheduled  map[string]bool
+    }{inProgress: make(map[string]int), scheduled: make(map[string]bool)}
+
     // Redis client
     redisClient *redis.Client
 
