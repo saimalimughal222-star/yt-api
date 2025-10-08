@@ -61,6 +61,7 @@ func processJob(job *ConversionJob, workerID int) {
 
     atomic.AddInt64(&activeJobs, -1)
     atomic.AddInt64(&completedJobs, 1)
+    atomic.AddInt64(&totalProcessingTimeNs, job.CompletedAt.Sub(job.StartedAt).Nanoseconds())
 
     notifyJobCompletion(job)
     log.Printf("Worker %d: Job %s completed successfully. Download: %s\n", workerID, job.ID, job.DownloadURL)

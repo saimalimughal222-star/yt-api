@@ -83,6 +83,11 @@ func cleanupOldJobs() {
                 _ = os.Remove(job.FilePath)
             }
             delete(jobStore.jobs, id)
+            // Also remove from Redis
+            deleteJobFromRedis(id)
+            if job.URL != "" {
+                removeURLMapping(job.URL)
+            }
         }
     }
     jobStore.Unlock()

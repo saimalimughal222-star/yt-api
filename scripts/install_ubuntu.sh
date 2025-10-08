@@ -10,6 +10,7 @@ SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
 NGINX_SITE="/etc/nginx/sites-available/${APP_NAME}.conf"
 NGINX_LINK="/etc/nginx/sites-enabled/${APP_NAME}.conf"
 NGINX_LIMITS="/etc/nginx/conf.d/${APP_NAME}-limits.conf"
+ENV_FILE="/etc/${APP_NAME}.env"
 
 if [[ $EUID -ne 0 ]]; then
   echo "Please run as root" >&2
@@ -55,60 +56,14 @@ chown -R ${APP_USER}:${APP_GROUP} "${INSTALL_DIR}"
 chown ${APP_USER}:${APP_GROUP} "${BIN_PATH}"
 chmod 0755 "${BIN_PATH}"
 
-# Create downloads dir
-mkdir -p /var/lib/${APP_NAME}/downloads
-chown -R ${APP_USER}:${APP_GROUP} /var/lib/${APP_NAME}
+# Create downloads dir inside install root
+mkdir -p ${INSTALL_DIR}/downloads
+chown -R ${APP_USER}:${APP_GROUP} ${INSTALL_DIR}
 
-# Systemd service
+# Systemd detection (we will create service later after prompts)
 HAS_SYSTEMD=false
 if command -v systemctl >/dev/null 2>&1 && pidof systemd >/dev/null 2>&1; then
   HAS_SYSTEMD=true
-fi
-
-if [[ "${HAS_SYSTEMD}" == "true" ]]; then
-cat >/etc/systemd/system/${APP_NAME}.service <<'EOF'
-[Unit]
-Description=YouTube to MP3 API
-After=network.target redis-server.service
-
-[Service]
-User=ytmp3
-Group=ytmp3
-ExecStart=/usr/local/bin/ytmp3-api
-WorkingDirectory=/var/lib/ytmp3-api
-Environment=REDIS_ADDR=localhost:6379
-Environment=REQUESTS_PER_SECOND=${REQUESTS_PER_SECOND}
-Environment=BURST_SIZE=${BURST_SIZE}
-Environment=WORKER_POOL_SIZE=${WORKER_POOL_SIZE}
-Environment=JOB_QUEUE_CAPACITY=${JOB_QUEUE_CAPACITY}
-Restart=on-failure
-RestartSec=3
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable ${APP_NAME}.service
-systemctl restart ${APP_NAME}.service
-else
-  # Fallback for environments without systemd (e.g., WSL without systemd)
-  cat >/usr/local/bin/${APP_NAME}-run <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-export REDIS_ADDR=localhost:6379
-export REQUESTS_PER_SECOND=${REQUESTS_PER_SECOND}
-export BURST_SIZE=${BURST_SIZE}
-export WORKER_POOL_SIZE=${WORKER_POOL_SIZE}
-export JOB_QUEUE_CAPACITY=${JOB_QUEUE_CAPACITY}
-cd /var/lib/ytmp3-api
-nohup /usr/local/bin/ytmp3-api >/var/lib/ytmp3-api/ytmp3-api.log 2>&1 &
-echo $! > /var/lib/ytmp3-api/ytmp3-api.pid
-echo "Started ytmp3-api (PID $(cat /var/lib/ytmp3-api/ytmp3-api.pid))"
-EOF
-  chmod +x /usr/local/bin/${APP_NAME}-run
-  /usr/local/bin/${APP_NAME}-run || true
 fi
 
 # Interactive options and Nginx configuration
@@ -135,6 +90,19 @@ WORKER_POOL_SIZE=$(read_with_default "Worker pool size" "20")
 JOB_QUEUE_CAPACITY=$(read_with_default "Job queue capacity" "1000")
 REQUESTS_PER_SECOND=$(read_with_default "App rate limit (req/s)" "100")
 BURST_SIZE=$(read_with_default "App rate burst" "200")
+
+# Optional: clear previous data before starting (Redis keys and downloads)
+if ask_yes_no "Clear existing data now (Redis job/url keys and downloads folder)?" Y; then
+  echo "Clearing downloads in ${INSTALL_DIR}/downloads ..."
+  rm -rf ${INSTALL_DIR}/downloads/* || true
+  if command -v redis-cli >/dev/null 2>&1; then
+    echo "Clearing Redis keys job:* and url:* on localhost:6379 ..."
+    redis-cli --scan --pattern 'job:*' | xargs -r redis-cli del || true
+    redis-cli --scan --pattern 'url:*' | xargs -r redis-cli del || true
+  else
+    echo "redis-cli not found; skipping Redis key cleanup"
+  fi
+fi
 
 if ask_yes_no "Configure Nginx reverse proxy (domain or IP)?" Y; then
   DOMAIN=$(read_with_default "Enter domain (blank = use server IP)" "")
@@ -199,7 +167,63 @@ else
   service redis-server start || redis-server --daemonize yes || true
 fi
 
+# Write environment file for systemd and create service
+REQUESTS_PER_SECOND=${REQUESTS_PER_SECOND}
+BURST_SIZE=${BURST_SIZE}
+cat >"${ENV_FILE}" <<EOF
+REDIS_ADDR=localhost:6379
+REQUESTS_PER_SECOND=${REQUESTS_PER_SECOND}
+BURST_SIZE=${BURST_SIZE}
+WORKER_POOL_SIZE=${WORKER_POOL_SIZE}
+JOB_QUEUE_CAPACITY=${JOB_QUEUE_CAPACITY}
+MAX_JOB_RETRIES=3
+JOB_EXPIRATION_HOURS=24
+EOF
+chmod 0644 "${ENV_FILE}"
+
+if [[ "${HAS_SYSTEMD}" == "true" ]]; then
+cat >"${SERVICE_FILE}" <<EOF
+[Unit]
+Description=YouTube to MP3 API
+After=network.target redis-server.service
+
+[Service]
+User=ytmp3
+Group=ytmp3
+EnvironmentFile=${ENV_FILE}
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=/usr/local/bin/ytmp3-api
+WorkingDirectory=${INSTALL_DIR}
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable ${APP_NAME}.service
+systemctl restart ${APP_NAME}.service
+else
+  cat >"/usr/local/bin/${APP_NAME}-run" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+source ${ENV_FILE} || true
+cd ${INSTALL_DIR}
+nohup /usr/local/bin/ytmp3-api >${INSTALL_DIR}/ytmp3-api.log 2>&1 &
+echo $! > ${INSTALL_DIR}/ytmp3-api.pid
+echo "Started ytmp3-api (PID $(cat ${INSTALL_DIR}/ytmp3-api.pid))"
+EOF
+  chmod +x "/usr/local/bin/${APP_NAME}-run"
+  "/usr/local/bin/${APP_NAME}-run" || true
+fi
+
 # Done
 systemctl status ${APP_NAME}.service --no-pager || true
 
-echo "Installation complete. API available on http://<server>:80"
+echo "Installation complete. API available on http://<server>:80 and http://localhost:8080"

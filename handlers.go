@@ -11,6 +11,7 @@ import (
     "time"
 
     "github.com/google/uuid"
+    "strings"
 )
 
 func handleExtract(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +36,29 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    if !isValidYouTubeURL(req.URL) {
+        http.Error(w, "Invalid YouTube URL", http.StatusBadRequest)
+        return
+    }
+
+    // Canonicalize URL (supports Shorts, embed, youtu.be, mobile)
+    if canon, ok := canonicalizeYouTubeURL(req.URL); ok {
+        req.URL = canon
+    }
+
+    // Prefer Redis-based dedupe first
+    if jobIDFromURL, err := getJobIDByURL(req.URL); err == nil && jobIDFromURL != "" {
+        if jobByRedis, err2 := getJobFromRedis(jobIDFromURL); err2 == nil && jobByRedis != nil && jobByRedis.Status == StatusCompleted {
+            w.Header().Set("Content-Type", "application/json")
+            json.NewEncoder(w).Encode(map[string]string{
+                "job_id": jobByRedis.ID,
+                "status": string(jobByRedis.Status),
+                "download_url": jobByRedis.DownloadURL,
+                "check_status_endpoint": fmt.Sprintf("http://localhost:8080/status/%s", jobByRedis.ID),
+            })
+            return
+        }
+    }
     existingJob := findJobByURL(req.URL)
     if existingJob != nil && existingJob.Status == StatusCompleted {
         w.Header().Set("Content-Type", "application/json")
@@ -62,6 +86,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
     jobStore.Unlock()
 
     saveJobToRedis(job)
+    _ = saveURLMapping(req.URL, jobID)
     atomic.AddInt64(&queuedJobs, 1)
 
     resultCh := registerJobWaiter(jobID)
@@ -162,6 +187,10 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
     }
 
     filenameWithExt := filepath.Base(r.URL.Path)
+    if !strings.HasSuffix(filenameWithExt, ".mp3") {
+        http.Error(w, "Invalid filename", http.StatusBadRequest)
+        return
+    }
     jobID := filenameWithExt[:len(filenameWithExt)-len(".mp3")]
 
     job, err := getJobFromRedis(jobID)
@@ -206,6 +235,10 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
             jobStore.Lock()
             delete(jobStore.jobs, j.ID)
             jobStore.Unlock()
+            deleteJobFromRedis(j.ID)
+            if j.URL != "" {
+                removeURLMapping(j.URL)
+            }
         }(job)
     }
 }

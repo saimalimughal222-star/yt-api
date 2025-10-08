@@ -7,6 +7,7 @@ import (
     "time"
 
     redis "github.com/redis/go-redis/v9"
+    xxhash "github.com/cespare/xxhash/v2"
 )
 
 func initRedis() {
@@ -49,4 +50,41 @@ func getJobFromRedis(jobID string) (*ConversionJob, error) {
         return nil, err
     }
     return &job, nil
+}
+
+// URL mapping for deduplication across restarts
+func saveURLMapping(videoURL, jobID string) error {
+    if redisClient == nil {
+        return nil
+    }
+    key := fmt.Sprintf("url:%x", xxhashString(videoURL))
+    return redisClient.Set(ctx, key, jobID, JobExpirationHours*time.Hour).Err()
+}
+
+func getJobIDByURL(videoURL string) (string, error) {
+    if redisClient == nil {
+        return "", nil
+    }
+    key := fmt.Sprintf("url:%x", xxhashString(videoURL))
+    return redisClient.Get(ctx, key).Result()
+}
+
+func removeURLMapping(videoURL string) {
+    if redisClient == nil {
+        return
+    }
+    key := fmt.Sprintf("url:%x", xxhashString(videoURL))
+    _ = redisClient.Del(ctx, key).Err()
+}
+
+func deleteJobFromRedis(jobID string) {
+    if redisClient == nil {
+        return
+    }
+    key := fmt.Sprintf("job:%s", jobID)
+    _ = redisClient.Del(ctx, key).Err()
+}
+
+func xxhashString(s string) uint64 {
+    return xxhash.Sum64String(s)
 }
