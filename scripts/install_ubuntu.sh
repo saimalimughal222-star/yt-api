@@ -89,10 +89,47 @@ read_with_default() {
   echo "${var:-$def}"
 }
 
-WORKER_POOL_SIZE=$(read_with_default "Worker pool size" "20")
-JOB_QUEUE_CAPACITY=$(read_with_default "Job queue capacity" "1000")
-REQUESTS_PER_SECOND=$(read_with_default "App rate limit (req/s)" "100")
-BURST_SIZE=$(read_with_default "App rate burst" "200")
+validate_int() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+prompt_int() {
+  local prompt="$1"; local def="$2"; local val
+  while true; do
+    read -r -p "$prompt [$def]: " val || val=""
+    val="${val:-$def}"
+    if validate_int "$val"; then
+      echo "$val"; return 0
+    fi
+    echo "Please enter a positive integer."
+  done
+}
+
+validate_duration() {
+  # Accept Go-like durations composed of units ns|us|ms|s|m|h (e.g., 30s, 5m, 1h30m)
+  [[ "$1" =~ ^([0-9]+(ns|us|ms|s|m|h))+$ ]]
+}
+
+prompt_duration() {
+  local prompt="$1"; local def="$2"; local val
+  while true; do
+    read -r -p "$prompt [$def]: " val || val=""
+    val="${val:-$def}"
+    if validate_duration "$val"; then
+      echo "$val"; return 0
+    fi
+    echo "Please enter duration like 30s, 5m, 1h30m (units: ns|us|ms|s|m|h)."
+  done
+}
+
+validate_redis_addr() {
+  [[ "$1" =~ ^[^:]+:[0-9]+$ ]]
+}
+
+WORKER_POOL_SIZE=$(prompt_int "Worker pool size" "20")
+JOB_QUEUE_CAPACITY=$(prompt_int "Job queue capacity" "1000")
+REQUESTS_PER_SECOND=$(prompt_int "App rate limit (req/s)" "100")
+BURST_SIZE=$(prompt_int "App rate burst" "200")
 
 # Abuse protection & auth
 REQUIRE_API_KEY_ANS=$(read_with_default "Require API key? (true/false)" "false")
@@ -101,8 +138,8 @@ if [[ "${REQUIRE_API_KEY_ANS}" == "true" ]]; then
 else
   API_KEYS=""
 fi
-PER_IP_RPS=$(read_with_default "Per-IP request rate (req/s)" "10")
-PER_IP_BURST=$(read_with_default "Per-IP burst" "20")
+PER_IP_RPS=$(prompt_int "Per-IP request rate (req/s)" "10")
+PER_IP_BURST=$(prompt_int "Per-IP burst" "20")
 
 # Networking / CORS
 ALLOWED_ORIGINS=$(read_with_default "Allowed origins for CORS (comma or *)" "*")
@@ -111,20 +148,24 @@ ALLOWED_ORIGINS=$(read_with_default "Allowed origins for CORS (comma or *)" "*")
 if ask_yes_no "Use LOCAL Redis at localhost:6379?" Y; then
   REDIS_ADDR="localhost:6379"
 else
-  REDIS_ADDR=$(read_with_default "Enter Redis address host:port" "localhost:6379")
+  while true; do
+    REDIS_ADDR=$(read_with_default "Enter Redis address host:port" "localhost:6379")
+    if validate_redis_addr "$REDIS_ADDR"; then break; fi
+    echo "Format must be host:port"
+  done
 fi
 
 # Durations (use Go duration format: 24h, 30s, etc.)
-JOB_EXPIRATION=$(read_with_default "Job expiration (metadata TTL)" "24h")
-HEALTH_CHECK_INTERVAL=$(read_with_default "Health check interval" "30s")
-FAST_PATH_WAIT=$(read_with_default "Fast-path wait (for quick jobs)" "8s")
+JOB_EXPIRATION=$(prompt_duration "Job expiration (metadata TTL)" "24h")
+HEALTH_CHECK_INTERVAL=$(prompt_duration "Health check interval" "30s")
+FAST_PATH_WAIT=$(prompt_duration "Fast-path wait (for quick jobs)" "8s")
 
 # Retry backoff
-BACKOFF_BASE_SECONDS=$(read_with_default "Backoff base seconds" "5")
-BACKOFF_MAX_SECONDS=$(read_with_default "Backoff max seconds" "60")
+BACKOFF_BASE_SECONDS=$(prompt_int "Backoff base seconds" "5")
+BACKOFF_MAX_SECONDS=$(prompt_int "Backoff max seconds" "60")
 
 # Max video duration (minutes); blank to disable
-MAX_DURATION_MIN=$(read_with_default "Max video duration minutes (blank = no limit)" "90")
+MAX_DURATION_MIN=$(prompt_int "Max video duration minutes (0 = no limit)" "90")
 
 # Optional: clear previous data before starting (Redis keys and downloads)
 if ask_yes_no "Clear existing data now (Redis job/url keys and downloads folder)?" Y; then
