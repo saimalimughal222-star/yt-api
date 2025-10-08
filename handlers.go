@@ -740,3 +740,56 @@ func handleAdminLogs(w http.ResponseWriter, r *http.Request) {
         }
     }
 }
+
+// Settings read/write
+func handleAdminSettings(w http.ResponseWriter, r *http.Request) {
+    if r.Method == http.MethodGet {
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "ALLOWED_ORIGINS": AllowedOrigins,
+            "REQUESTS_PER_SECOND": RequestsPerSecond,
+            "BURST_SIZE": BurstSize,
+            "WORKER_POOL_SIZE": WorkerPoolSize,
+            "JOB_QUEUE_CAPACITY": JobQueueCapacity,
+            "MAX_JOB_RETRIES": MaxJobRetries,
+            "JOB_EXPIRATION": JobExpiration.String(),
+            "HEALTH_CHECK_INTERVAL": HealthCheckInterval.String(),
+            "FAST_PATH_WAIT": FastPathWait.String(),
+            "PER_IP_RPS": PerIPRPS,
+            "PER_IP_BURST": PerIPBurst,
+            "BACKOFF_BASE_SECONDS": BackoffBaseSeconds,
+            "BACKOFF_MAX_SECONDS": BackoffMaxSeconds,
+            "MAX_DURATION_MIN": os.Getenv("MAX_DURATION_MIN"),
+            "ADMIN_USER": AdminUser,
+        })
+        return
+    }
+    if r.Method == http.MethodPost {
+        var body map[string]interface{}
+        if err := json.NewDecoder(r.Body).Decode(&body); err != nil { http.Error(w, "Invalid JSON", http.StatusBadRequest); return }
+        if v, ok := body["ALLOWED_ORIGINS"].(string); ok { AllowedOrigins = v }
+        if v, ok := body["REQUESTS_PER_SECOND"].(float64); ok { RequestsPerSecond = int(v) }
+        if v, ok := body["BURST_SIZE"].(float64); ok { BurstSize = int(v) }
+        if v, ok := body["WORKER_POOL_SIZE"].(float64); ok { WorkerPoolSize = int(v) }
+        if v, ok := body["JOB_QUEUE_CAPACITY"].(float64); ok { JobQueueCapacity = int(v) }
+        if v, ok := body["MAX_JOB_RETRIES"].(float64); ok { MaxJobRetries = int(v) }
+        if v, ok := body["PER_IP_RPS"].(float64); ok { PerIPRPS = int(v) }
+        if v, ok := body["PER_IP_BURST"].(float64); ok { PerIPBurst = int(v) }
+        if v, ok := body["BACKOFF_BASE_SECONDS"].(float64); ok { BackoffBaseSeconds = int(v) }
+        if v, ok := body["BACKOFF_MAX_SECONDS"].(float64); ok { BackoffMaxSeconds = int(v) }
+        if v, ok := body["ADMIN_USER"].(string); ok { AdminUser = v }
+        // NOTE: not setting AdminPass here for safety unless explicitly included
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]string{"status":"ok"})
+        return
+    }
+    http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+// Soft reload: re-init limiter using current config
+func handleAdminReload(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+    rateLimiter = rate.NewLimiter(rate.Limit(RequestsPerSecond), BurstSize)
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{"reloaded":true,"rps":RequestsPerSecond,"burst":BurstSize})
+}

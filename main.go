@@ -4,6 +4,8 @@ import (
     "fmt"
     "log"
     "net/http"
+    "io"
+    "os"
 
     "golang.org/x/time/rate"
 )
@@ -20,6 +22,9 @@ func main() {
 
     // Initialize rate limiter
     rateLimiter = rate.NewLimiter(rate.Limit(RequestsPerSecond), BurstSize)
+
+    // Hook logs into admin SSE buffer
+    log.SetOutput(io.MultiWriter(os.Stdout, adminLogWriter{}))
 
     // Start worker pool
     for i := 0; i < WorkerPoolSize; i++ {
@@ -47,6 +52,8 @@ func main() {
     mux.HandleFunc("/admin/cancel/", basicAuthMiddleware(handleAdminCancel))
     mux.HandleFunc("/admin/delete/", basicAuthMiddleware(handleAdminDelete))
     mux.HandleFunc("/admin/config", basicAuthMiddleware(handleAdminConfig))
+    mux.HandleFunc("/admin/settings", basicAuthMiddleware(handleAdminSettings))
+    mux.HandleFunc("/admin/reload", basicAuthMiddleware(handleAdminReload))
     mux.HandleFunc("/admin/logs", basicAuthMiddleware(handleAdminLogs))
 
     // Graceful shutdown setup
