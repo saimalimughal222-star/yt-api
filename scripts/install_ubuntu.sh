@@ -51,6 +51,9 @@ WORKDIR=$(pwd)
 mkdir -p "${INSTALL_DIR}"
 cp -r "${WORKDIR}"/* "${INSTALL_DIR}/"
 cd "${INSTALL_DIR}"
+"${GO_BIN}" version || true
+"${GO_BIN}" mod tidy
+"${GO_BIN}" clean -cache
 "${GO_BIN}" build -o "${BIN_PATH}" .
 chown -R ${APP_USER}:${APP_GROUP} "${INSTALL_DIR}"
 chown ${APP_USER}:${APP_GROUP} "${BIN_PATH}"
@@ -177,6 +180,8 @@ BURST_SIZE=${BURST_SIZE}
 WORKER_POOL_SIZE=${WORKER_POOL_SIZE}
 JOB_QUEUE_CAPACITY=${JOB_QUEUE_CAPACITY}
 MAX_JOB_RETRIES=3
+# Prefer JOB_EXPIRATION (e.g., 24h). Keep HOURS for backward-compat.
+JOB_EXPIRATION=24h
 JOB_EXPIRATION_HOURS=24
 EOF
 chmod 0644 "${ENV_FILE}"

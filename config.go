@@ -22,8 +22,8 @@ var (
 	RedisPassword = ""
 	RedisDB       = 0
 
-	// Job Expiration
-	JobExpirationHours = 24
+	// Job Expiration (as duration)
+	JobExpiration = 24 * time.Hour
 
 	// Health Check
 	HealthCheckInterval = 30 * time.Second
@@ -74,7 +74,13 @@ func InitConfigFromEnv() {
 	RedisPassword = envString("REDIS_PASSWORD", RedisPassword)
 	RedisDB = envInt("REDIS_DB", RedisDB)
 
-	JobExpirationHours = envInt("JOB_EXPIRATION_HOURS", JobExpirationHours)
+	// Prefer JOB_EXPIRATION (duration like "24h"); fallback to JOB_EXPIRATION_HOURS (int hours)
+	JobExpiration = envDuration("JOB_EXPIRATION", JobExpiration)
+	if os.Getenv("JOB_EXPIRATION") == "" {
+		defHours := int(JobExpiration / time.Hour)
+		h := envInt("JOB_EXPIRATION_HOURS", defHours)
+		JobExpiration = time.Duration(h) * time.Hour
+	}
 
 	HealthCheckInterval = envDuration("HEALTH_CHECK_INTERVAL", HealthCheckInterval)
 	FastPathWait = envDuration("FAST_PATH_WAIT", FastPathWait)
