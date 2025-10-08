@@ -489,6 +489,46 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         el.textContent = String(n);
       });
     }
+    async function loadSettings(){
+      try{
+        const s = await fetchJSON('/admin/settings');
+        const set = (id,val)=>{ const el=document.getElementById(id); if(el) el.value = val ?? ''; };
+        set('st_ALLOWED_ORIGINS', s.ALLOWED_ORIGINS);
+        set('st_REQUESTS_PER_SECOND', s.REQUESTS_PER_SECOND);
+        set('st_BURST_SIZE', s.BURST_SIZE);
+        set('st_WORKER_POOL_SIZE', s.WORKER_POOL_SIZE);
+        set('st_JOB_QUEUE_CAPACITY', s.JOB_QUEUE_CAPACITY);
+        set('st_JOB_EXPIRATION', s.JOB_EXPIRATION);
+        set('st_HEALTH_CHECK_INTERVAL', s.HEALTH_CHECK_INTERVAL);
+        set('st_FAST_PATH_WAIT', s.FAST_PATH_WAIT);
+        set('st_PER_IP_RPS', s.PER_IP_RPS);
+        set('st_PER_IP_BURST', s.PER_IP_BURST);
+        set('st_BACKOFF_BASE_SECONDS', s.BACKOFF_BASE_SECONDS);
+        set('st_BACKOFF_MAX_SECONDS', s.BACKOFF_MAX_SECONDS);
+        set('st_ADMIN_USER', s.ADMIN_USER);
+      }catch(e){console.error(e)}
+    }
+    async function saveSettings(){
+      const get = (id)=>{ const el=document.getElementById(id); return el? el.value: '' };
+      const body = {
+        ALLOWED_ORIGINS: get('st_ALLOWED_ORIGINS'),
+        REQUESTS_PER_SECOND: parseInt(get('st_REQUESTS_PER_SECOND')||'0',10),
+        BURST_SIZE: parseInt(get('st_BURST_SIZE')||'0',10),
+        WORKER_POOL_SIZE: parseInt(get('st_WORKER_POOL_SIZE')||'0',10),
+        JOB_QUEUE_CAPACITY: parseInt(get('st_JOB_QUEUE_CAPACITY')||'0',10),
+        JOB_EXPIRATION: get('st_JOB_EXPIRATION'),
+        HEALTH_CHECK_INTERVAL: get('st_HEALTH_CHECK_INTERVAL'),
+        FAST_PATH_WAIT: get('st_FAST_PATH_WAIT'),
+        PER_IP_RPS: parseInt(get('st_PER_IP_RPS')||'0',10),
+        PER_IP_BURST: parseInt(get('st_PER_IP_BURST')||'0',10),
+        BACKOFF_BASE_SECONDS: parseInt(get('st_BACKOFF_BASE_SECONDS')||'0',10),
+        BACKOFF_MAX_SECONDS: parseInt(get('st_BACKOFF_MAX_SECONDS')||'0',10),
+        ADMIN_USER: get('st_ADMIN_USER'),
+      };
+      try{ await postJSON('/admin/settings', body); alert('Saved. Click Reload to apply rate limiter. Some changes may require service restart.'); }
+      catch(e){ alert('Save failed'); }
+    }
+    async function reloadRates(){ try{ await postJSON('/admin/reload',{}); alert('Rate limiter reloaded'); } catch(e){ alert('Reload failed') } }
     function renderJobs(items){
       const q = document.getElementById('q').value.toLowerCase();
       const st = document.getElementById('filter').value;
@@ -516,7 +556,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
     }
     setInterval(refresh, 3000);
     setInterval(tickCountdown, 1000);
-    window.onload=refresh;
+    window.onload=()=>{ refresh(); loadSettings(); try{ const es=new EventSource('/admin/logs'); es.onmessage=(e)=>{const el=document.getElementById('logs'); if(el){ el.textContent += e.data+'\n'; el.scrollTop=el.scrollHeight; } }; }catch(e){} };
     </script></head><body>
     <header><h2>Admin Dashboard</h2><div class="row"><a href="/docs">Docs</a><a href="/docs/frontend">Frontend Docs</a></div></header>
     <div class="wrap">
