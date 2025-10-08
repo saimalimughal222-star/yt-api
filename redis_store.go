@@ -33,7 +33,8 @@ func saveJobToRedis(job *ConversionJob) error {
         return err
     }
     key := fmt.Sprintf("job:%s", job.ID)
-    return redisClient.Set(ctx, key, jobData, JobExpirationHours*time.Hour).Err()
+    expiration := time.Duration(JobExpirationHours) * time.Hour
+    return redisClient.Set(ctx, key, jobData, expiration).Err()
 }
 
 func getJobFromRedis(jobID string) (*ConversionJob, error) {
@@ -58,7 +59,8 @@ func saveURLMapping(videoURL, jobID string) error {
         return nil
     }
     key := fmt.Sprintf("url:%x", xxhashString(videoURL))
-    return redisClient.Set(ctx, key, jobID, JobExpirationHours*time.Hour).Err()
+    expiration := time.Duration(JobExpirationHours) * time.Hour
+    return redisClient.Set(ctx, key, jobID, expiration).Err()
 }
 
 func getJobIDByURL(videoURL string) (string, error) {

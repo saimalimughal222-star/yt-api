@@ -75,7 +75,7 @@ func startJobCleanup() {
 }
 
 func cleanupOldJobs() {
-    cutoff := time.Now().Add(-JobExpirationHours * time.Hour)
+    cutoff := time.Now().Add(-time.Duration(JobExpirationHours) * time.Hour)
     jobStore.Lock()
     for id, job := range jobStore.jobs {
         if job.CreatedAt.Before(cutoff) {
