@@ -443,6 +443,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         document.getElementById('maintLbl').textContent = d.metrics.maintenance? 'Maintenance ON' : '';
         renderActive(d.active||[]);
         renderRecent(d.recent||[]);
+        renderFiles(d.files||[]);
         // legacy list for quick filtering across all jobs snapshot (optional)
         const flat = (d.recent||[]).map(x=>({id:x.id,status:'completed',url:x.url,created_at:x.completed_at}));
         renderJobs(flat);
@@ -463,6 +464,17 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
       items.forEach(j=>{
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${j.id}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.completed_at}</td><td>${j.duration_sec}</td><td>${j.download_url?`<a href=\"${j.download_url}\" target=\"_blank\">Download</a>`:''}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    function renderFiles(items){
+      const tbody = document.getElementById('filesTbl');
+      if(!tbody) return;
+      tbody.innerHTML='';
+      items.forEach(f=>{
+        const delBtn = f.id? `<button onclick=\"deleteJob('${f.id}')\">Delete</button>` : '';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${f.name}</td><td>${f.size_human}</td><td>${f.delete_in_sec||0}</td><td>${delBtn}</td>`;
         tbody.appendChild(tr);
       });
     }
@@ -528,6 +540,10 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
       <div class="card" style="margin-top:16px">
         <h3>Recent Completed</h3>
         <table><thead><tr><th>ID</th><th>URL</th><th>Completed</th><th>Duration (s)</th><th>Download</th></tr></thead><tbody id="recentJobs"></tbody></table>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Files</h3>
+        <table><thead><tr><th>Name</th><th>Size</th><th>Delete In (s)</th><th>Actions</th></tr></thead><tbody id="filesTbl"></tbody></table>
       </div>
     </div>
     </body></html>`)
