@@ -472,10 +472,21 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
       if(!tbody) return;
       tbody.innerHTML='';
       items.forEach(f=>{
-        const delBtn = f.id? `<button onclick=\"deleteJob('${f.id}')\">Delete</button>` : '';
+        const delBtn = f.id? '<button onclick="deleteJob(\''+f.id+'\')">Delete</button>' : '';
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${f.name}</td><td>${f.size_human}</td><td>${f.delete_in_sec||0}</td><td>${delBtn}</td>`;
+        const secs = (f.delete_in_sec||0);
+        tr.innerHTML = '<td>'+ (f.name||'') +'</td><td>'+ (f.size_human||'') +'</td><td class="countdown" data-rem="'+secs+'">'+secs+'</td><td>'+delBtn+'</td>';
         tbody.appendChild(tr);
+      });
+    }
+    function tickCountdown(){
+      const els = document.querySelectorAll('.countdown');
+      els.forEach(el=>{
+        let n = parseInt(el.getAttribute('data-rem')||'0',10);
+        if (isNaN(n) || n<=0){ el.textContent='0'; return; }
+        n = n - 1;
+        el.setAttribute('data-rem', String(n));
+        el.textContent = String(n);
       });
     }
     function renderJobs(items){
@@ -504,6 +515,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
       if(r.ok) refresh(); else alert('Delete failed');
     }
     setInterval(refresh, 3000);
+    setInterval(tickCountdown, 1000);
     window.onload=refresh;
     </script></head><body>
     <header><h2>Admin Dashboard</h2><div class="row"><a href="/docs">Docs</a><a href="/docs/frontend">Frontend Docs</a></div></header>
