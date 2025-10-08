@@ -49,6 +49,13 @@ var (
         m map[string]context.CancelFunc
     }{m: make(map[string]context.CancelFunc)}
 
+    // Admin live logs ring buffer and subscribers
+    adminLogs = struct {
+        sync.Mutex
+        lines []string
+        subs  map[chan string]struct{}
+    }{lines: make([]string, 0, 500), subs: make(map[chan string]struct{})}
+
     // Redis client
     redisClient *redis.Client
 
@@ -58,6 +65,44 @@ var (
     // Context for graceful shutdown
     ctx, cancel = context.WithCancel(context.Background())
 )
+
+// Append a log line to ring buffer and broadcast to subscribers
+func appendAdminLog(line string) {
+    adminLogs.Lock()
+    if len(adminLogs.lines) >= 500 {
+        copy(adminLogs.lines, adminLogs.lines[1:])
+        adminLogs.lines[len(adminLogs.lines)-1] = line
+    } else {
+        adminLogs.lines = append(adminLogs.lines, line)
+    }
+    for ch := range adminLogs.subs {
+        select { case ch <- line: default: }
+    }
+    adminLogs.Unlock()
+}
+
+// Writer to hook standard logger
+type adminLogWriter struct{}
+
+func (w adminLogWriter) Write(p []byte) (int, error) {
+    appendAdminLog(string(p))
+    return len(p), nil
+}
+
+func subscribeAdminLogs() chan string {
+    ch := make(chan string, 100)
+    adminLogs.Lock()
+    adminLogs.subs[ch] = struct{}{}
+    adminLogs.Unlock()
+    return ch
+}
+
+func unsubscribeAdminLogs(ch chan string) {
+    adminLogs.Lock()
+    delete(adminLogs.subs, ch)
+    close(ch)
+    adminLogs.Unlock()
+}
 
 // Waiters notified when a job reaches a terminal state (completed or failed).
 var jobWaiters = struct {
