@@ -46,6 +46,9 @@ var (
 	// Admin UI credentials
 	AdminUser = ""
 	AdminPass = ""
+
+	// Max processing time per job
+	JobMaxProcessing = 30 * time.Minute
 )
 
 func envInt(key string, def int) int {
@@ -113,4 +116,6 @@ func InitConfigFromEnv() {
 
 	AdminUser = envString("ADMIN_USER", AdminUser)
 	AdminPass = envString("ADMIN_PASS", AdminPass)
+
+	JobMaxProcessing = envDuration("JOB_MAX_PROCESSING", JobMaxProcessing)
 }
