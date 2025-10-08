@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "sync/atomic"
     "time"
+    "context"
 )
 
 func startWorker(workerID int) {
@@ -36,7 +37,7 @@ func processJob(job *ConversionJob, workerID int) {
     outputPath := filepath.Join(outputDir, job.ID+".mp3")
 
     // Per-job context with timeout for cancellation/long-running protection
-    jobCtx, jobCancel := context.WithTimeout(ctx, JobMaxProcessing)
+    _, jobCancel := context.WithTimeout(ctx, JobMaxProcessing)
     jobCancels.Lock()
     jobCancels.m[job.ID] = jobCancel
     jobCancels.Unlock()

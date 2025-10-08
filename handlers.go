@@ -15,6 +15,7 @@ import (
     "strconv"
     "sort"
     "math"
+    "golang.org/x/time/rate"
 )
 
 func handleExtract(w http.ResponseWriter, r *http.Request) {
@@ -439,7 +440,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         document.getElementById('p50').textContent = (d.metrics.p50_processing_s||0).toFixed(2);
         document.getElementById('p95').textContent = (d.metrics.p95_processing_s||0).toFixed(2);
         document.getElementById('cpm').textContent = d.metrics.conversions_per_min||0;
-        document.getElementById('storage').textContent = `${d.metrics.files_count||0} files • ${d.metrics.storage_human||'0 B'}`;
+        document.getElementById('storage').textContent = String((d.metrics.files_count||0))+' files - '+(d.metrics.storage_human||'0 B');
         { const el=document.getElementById('maintLbl'); if(el) el.textContent = d.metrics.maintenance? 'Maintenance ON' : ''; }
         renderActive(d.active||[]);
         renderRecent(d.recent||[]);
@@ -454,7 +455,7 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
       tbody.innerHTML='';
       items.forEach(j=>{
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${j.id}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.started_at}</td><td>${j.elapsed_sec}</td>`;
+        tr.innerHTML = '<td>'+j.id+'</td><td>'+((j.url||'').slice(0,80))+'</td><td>'+j.started_at+'</td><td>'+j.elapsed_sec+'</td>';
         tbody.appendChild(tr);
       });
     }
@@ -463,7 +464,8 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
       tbody.innerHTML='';
       items.forEach(j=>{
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${j.id}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.completed_at}</td><td>${j.duration_sec}</td><td>${j.download_url?`<a href=\"${j.download_url}\" target=\"_blank\">Download</a>`:''}</td>`;
+        var dl = j.download_url ? '<a href="'+j.download_url+'" target="_blank">Download</a>' : '';
+        tr.innerHTML = '<td>'+j.id+'</td><td>'+((j.url||'').slice(0,80))+'</td><td>'+j.completed_at+'</td><td>'+j.duration_sec+'</td><td>'+dl+'</td>';
         tbody.appendChild(tr);
       });
     }
@@ -538,8 +540,8 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         if(q && !(j.id.includes(q)||j.url.includes(q)||j.status.includes(q))) return;
         if(st && j.status!==st) return;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${j.id}</td><td>${j.status}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.created_at||''}</td>
-        <td><div class="row"><button onclick="cancelJob('${j.id}')">Cancel</button><button onclick="deleteJob('${j.id}')">Delete</button></div></td>`;
+        tr.innerHTML = '<td>'+j.id+'</td><td>'+j.status+'</td><td>'+((j.url||'').slice(0,80))+'</td><td>'+(j.created_at||'')+'</td>'+
+        '<td><div class="row"><button onclick="cancelJob(\''+j.id+'\')">Cancel</button><button onclick="deleteJob(\''+j.id+'\')">Delete</button></div></td>';
         tbody.appendChild(tr);
       });
       document.getElementById('count').textContent=items.length;
