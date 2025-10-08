@@ -426,6 +426,8 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
         document.getElementById('mem').textContent = d.health.memory_usage;
         document.getElementById('p50').textContent = (d.metrics.p50_processing_s||0).toFixed(2);
         document.getElementById('p95').textContent = (d.metrics.p95_processing_s||0).toFixed(2);
+        document.getElementById('cpm').textContent = d.metrics.conversions_per_min||0;
+        document.getElementById('storage').textContent = `${d.metrics.files_count||0} files • ${d.metrics.storage_human||'0 B'}`;
         renderActive(d.active||[]);
         renderRecent(d.recent||[]);
         // legacy list for quick filtering across all jobs snapshot (optional)
@@ -495,6 +497,8 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
       <div class="grid" style="margin-top:16px">
         <div class="card"><h3>p50 Processing (s)</h3><div class="big" id="p50">--</div></div>
         <div class="card"><h3>p95 Processing (s)</h3><div class="big" id="p95">--</div></div>
+        <div class="card"><h3>Conversions / min</h3><div class="big" id="cpm">--</div></div>
+        <div class="card"><h3>Storage</h3><div class="big" id="storage">--</div></div>
       </div>
       <div class="card" style="margin-top:16px">
         <div class="row" style="justify-content:space-between;align-items:center">
@@ -589,8 +593,49 @@ func handleAdminData(w http.ResponseWriter, r *http.Request) {
         "p95_processing_s": p95,
     }
 
+    // Storage stats (downloads dir)
+    downloadsDir := filepath.Join(".", "downloads")
+    filesCount := 0
+    var totalBytes int64
+    type fileDTO struct{ ID, Name string; SizeBytes int64; SizeHuman string; DeleteInSec int64 }
+    files := make([]fileDTO, 0)
+    if entries, err := os.ReadDir(downloadsDir); err == nil {
+        for _, e := range entries {
+            if e.IsDir() { continue }
+            filesCount++
+            fp := filepath.Join(downloadsDir, e.Name())
+            if fi, err := os.Stat(fp); err == nil {
+                totalBytes += fi.Size()
+                // try map to job for countdown
+                var id string
+                if strings.HasSuffix(e.Name(), ".mp3") { id = strings.TrimSuffix(e.Name(), ".mp3") }
+                rem := int64(0)
+                if id != "" {
+                    jobStore.RLock()
+                    j := jobStore.jobs[id]
+                    jobStore.RUnlock()
+                    if j != nil {
+                        delAt := j.CompletedAt.Add(10 * time.Minute)
+                        if !j.FirstDownloadedAt.IsZero() { delAt = j.FirstDownloadedAt.Add(10 * time.Minute) }
+                        if delAt.After(time.Now()) { rem = int64(delAt.Sub(time.Now()).Seconds()) }
+                    }
+                }
+                files = append(files, fileDTO{ID: id, Name: e.Name(), SizeBytes: fi.Size(), SizeHuman: humanizeBytes(fi.Size()), DeleteInSec: rem})
+            }
+        }
+    }
+    metrics["files_count"] = filesCount
+    metrics["storage_bytes"] = totalBytes
+    metrics["storage_human"] = humanizeBytes(totalBytes)
+
+    // Conversions per minute (last 60s)
+    recentConv := 0
+    cutoff := time.Now().Add(-60 * time.Second)
+    for _, j := range all { if j.Status == StatusCompleted && j.CompletedAt.After(cutoff) { recentConv++ } }
+    metrics["conversions_per_min"] = recentConv
+
     w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(map[string]interface{}{"health":health,"metrics":metrics,"active":act,"recent":rec})
+    json.NewEncoder(w).Encode(map[string]interface{}{"health":health,"metrics":metrics,"active":act,"recent":rec,"files":files})
 }
 
 // Admin wrappers for actions

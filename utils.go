@@ -112,6 +112,20 @@ func isValidYouTubeURL(raw string) bool {
     return ok
 }
 
+func humanizeBytes(b int64) string {
+    const unit = 1024
+    if b < unit {
+        return fmt.Sprintf("%d B", b)
+    }
+    div, exp := int64(unit), 0
+    for n := b / unit; n >= unit; n /= unit {
+        div *= unit
+        exp++
+    }
+    pre := "KMGTPE"[exp]
+    return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), pre)
+}
+
 // Schedules deletion 10 minutes after completion unless an active download is in progress.
 // If a download starts, FirstDownloadedAt gets set and deletion still happens after 10 minutes from that mark.
 func scheduleSafeDeletion(job *ConversionJob) {
