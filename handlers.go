@@ -29,6 +29,12 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    if MaintenanceMode {
+        w.Header().Set("Retry-After", "120")
+        http.Error(w, "Maintenance mode: new jobs temporarily disabled", http.StatusServiceUnavailable)
+        return
+    }
+
     var req Request
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
         http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -570,13 +576,15 @@ func handleAdminData(w http.ResponseWriter, r *http.Request) {
     if len(rec) > 200 { rec = rec[:200] }
 
     // Percentiles
-    p50, p95 := 0.0, 0.0
+    p50, p95, p99 := 0.0, 0.0, 0.0
     if len(durations) > 0 {
         sort.Float64s(durations)
         idx50 := int(math.Ceil(0.50*float64(len(durations)))) - 1; if idx50 < 0 { idx50 = 0 }
         idx95 := int(math.Ceil(0.95*float64(len(durations)))) - 1; if idx95 < 0 { idx95 = 0 }
+        idx99 := int(math.Ceil(0.99*float64(len(durations)))) - 1; if idx99 < 0 { idx99 = 0 }
         p50 = durations[idx50]
         p95 = durations[idx95]
+        p99 = durations[idx99]
     }
 
     metrics := map[string]interface{}{
@@ -592,6 +600,7 @@ func handleAdminData(w http.ResponseWriter, r *http.Request) {
         "avg_processing_s": getAvgProcessingTime(),
         "p50_processing_s": p50,
         "p95_processing_s": p95,
+        "p99_processing_s": p99,
     }
 
     // Storage stats (downloads dir)

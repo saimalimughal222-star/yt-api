@@ -49,6 +49,9 @@ var (
 
 	// Max processing time per job
 	JobMaxProcessing = 30 * time.Minute
+
+	// Maintenance mode: reject new /extract while allowing status/download
+	MaintenanceMode = false
 )
 
 func envInt(key string, def int) int {
@@ -118,4 +121,6 @@ func InitConfigFromEnv() {
 	AdminPass = envString("ADMIN_PASS", AdminPass)
 
 	JobMaxProcessing = envDuration("JOB_MAX_PROCESSING", JobMaxProcessing)
+
+	MaintenanceMode = envString("MAINTENANCE_MODE", "false") == "true"
 }
