@@ -26,7 +26,7 @@ func processJob(job *ConversionJob, workerID int) {
     updateJobStatus(job, StatusProcessing, "")
     job.StartedAt = time.Now()
 
-    outputDir := "downloads"
+    outputDir := "/app/downloads"
     if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
         updateJobStatus(job, StatusFailed, fmt.Sprintf("Error creating downloads directory: %v", err))
         notifyJobCompletion(job)

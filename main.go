@@ -6,13 +6,29 @@ import (
     "net/http"
     "io"
     "os"
+    "os/exec"
 
     "golang.org/x/time/rate"
 )
 
+func checkDependencies() error {
+    if _, err := exec.LookPath("yt-dlp"); err != nil {
+        return fmt.Errorf("yt-dlp not found: %v", err)
+    }
+    if _, err := exec.LookPath("ffmpeg"); err != nil {
+        return fmt.Errorf("ffmpeg not found: %v", err)
+    }
+    return nil
+}
+
 func main() {
     // Load configuration from environment
     InitConfigFromEnv()
+
+    // Check dependencies
+    if err := checkDependencies(); err != nil {
+        log.Fatal("Dependency check failed:", err)
+    }
 
     // Initialize Redis
     initRedis()

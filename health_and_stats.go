@@ -98,7 +98,7 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
     if job != nil && job.FilePath != "" {
         _ = os.Remove(job.FilePath)
     } else {
-        _ = os.Remove(filepath.Join("downloads", jobID+".mp3"))
+        _ = os.Remove(filepath.Join("/app/downloads", jobID+".mp3"))
     }
     // Remove in-memory
     jobStore.Lock()

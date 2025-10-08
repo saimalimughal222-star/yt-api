@@ -27,7 +27,7 @@ RUN apk --no-cache add ca-certificates tzdata ffmpeg
 # Install yt-dlp
 RUN apk add --no-cache python3 py3-pip && \
     pip3 install yt-dlp && \
-    ln -s /usr/bin/yt-dlp /usr/bin/yt-dlp
+    ln -s /usr/local/bin/yt-dlp /usr/bin/yt-dlp
 
 # Create app user
 RUN addgroup -g 1001 -S appgroup && \

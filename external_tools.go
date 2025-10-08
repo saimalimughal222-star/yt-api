@@ -32,14 +32,17 @@ type ytdlpInfo struct {
 }
 
 func getAudioStreamFromYTDLP(videoURL string) (string, *Metadata, error) {
-    ctxTimeout, cancel := context.WithTimeout(ctx, 45*time.Second)
+    ctxTimeout, cancel := context.WithTimeout(context.Background(), 45*time.Second)
     defer cancel()
 
     cmd := exec.CommandContext(ctxTimeout, "yt-dlp", "-J", "--no-warnings", "--skip-download", videoURL)
     var stdout, stderr bytes.Buffer
     cmd.Stdout = &stdout
     cmd.Stderr = &stderr
+    
+    log.Printf("Running yt-dlp for URL: %s", videoURL)
     if err := cmd.Run(); err != nil {
+        log.Printf("yt-dlp failed: %v, stderr: %s", err, strings.TrimSpace(stderr.String()))
         return "", nil, fmt.Errorf("yt-dlp metadata error: %v | %s", err, strings.TrimSpace(stderr.String()))
     }
 
@@ -107,7 +110,7 @@ func getAudioStreamFromYTDLP(videoURL string) (string, *Metadata, error) {
 }
 
 func convertStreamToMP3(audioURL, outputPath string) error {
-    ctxTimeout, cancel := context.WithTimeout(ctx, 10*time.Minute)
+    ctxTimeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
     defer cancel()
 
     args := []string{
@@ -124,7 +127,10 @@ func convertStreamToMP3(audioURL, outputPath string) error {
     cmd := exec.CommandContext(ctxTimeout, "ffmpeg", args...)
     var stderr bytes.Buffer
     cmd.Stderr = &stderr
+    
+    log.Printf("Running ffmpeg conversion to: %s", outputPath)
     if err := cmd.Run(); err != nil {
+        log.Printf("ffmpeg failed: %v, stderr: %s", err, strings.TrimSpace(stderr.String()))
         return fmt.Errorf("ffmpeg error: %v | %s", err, strings.TrimSpace(stderr.String()))
     }
     return nil
