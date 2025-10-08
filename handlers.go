@@ -41,6 +41,11 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Canonicalize URL (supports Shorts, embed, youtu.be, mobile)
+    if canon, ok := canonicalizeYouTubeURL(req.URL); ok {
+        req.URL = canon
+    }
+
     // Prefer Redis-based dedupe first
     if jobIDFromURL, err := getJobIDByURL(req.URL); err == nil && jobIDFromURL != "" {
         if jobByRedis, err2 := getJobFromRedis(jobIDFromURL); err2 == nil && jobByRedis != nil && jobByRedis.Status == StatusCompleted {

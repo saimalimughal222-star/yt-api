@@ -8,6 +8,7 @@ import (
     "runtime"
     "fmt"
     "strings"
+    neturl "net/url"
 )
 
 func setupGracefulShutdown() {
@@ -46,15 +47,66 @@ func getAvgProcessingTime() float64 {
     return float64(totalProcessingTimeNs) / float64(c) / 1e9
 }
 
-// Basic YouTube URL validator (covers youtu.be and youtube.com/watch)
-func isValidYouTubeURL(u string) bool {
-    if strings.HasPrefix(u, "https://www.youtube.com/watch?") ||
-        strings.HasPrefix(u, "http://www.youtube.com/watch?") ||
-        strings.HasPrefix(u, "https://youtube.com/watch?") ||
-        strings.HasPrefix(u, "http://youtube.com/watch?") ||
-        strings.HasPrefix(u, "https://youtu.be/") ||
-        strings.HasPrefix(u, "http://youtu.be/") {
-        return true
+// YouTube helpers: extract video ID and canonicalize to watch URL
+func extractYouTubeVideoID(raw string) (string, bool) {
+    u, err := neturl.Parse(raw)
+    if err != nil || u == nil {
+        return "", false
     }
-    return false
+    host := strings.ToLower(u.Host)
+    // Strip port if any
+    if i := strings.Index(host, ":"); i >= 0 {
+        host = host[:i]
+    }
+    path := strings.Trim(u.Path, "/")
+
+    // youtu.be/<id>
+    if host == "youtu.be" && path != "" {
+        parts := strings.Split(path, "/")
+        if len(parts) >= 1 && parts[0] != "" {
+            return parts[0], true
+        }
+        return "", false
+    }
+
+    // *.youtube.com
+    if strings.HasSuffix(host, "youtube.com") {
+        // /watch?v=<id>
+        if strings.EqualFold(path, "watch") {
+            v := u.Query().Get("v")
+            if v != "" {
+                return v, true
+            }
+        }
+        // /shorts/<id>
+        if strings.HasPrefix(path, "shorts/") {
+            id := strings.TrimPrefix(path, "shorts/")
+            id = strings.SplitN(id, "/", 2)[0]
+            if id != "" {
+                return id, true
+            }
+        }
+        // /embed/<id>
+        if strings.HasPrefix(path, "embed/") {
+            id := strings.TrimPrefix(path, "embed/")
+            id = strings.SplitN(id, "/", 2)[0]
+            if id != "" {
+                return id, true
+            }
+        }
+    }
+
+    return "", false
+}
+
+func canonicalizeYouTubeURL(raw string) (string, bool) {
+    if id, ok := extractYouTubeVideoID(raw); ok {
+        return "https://www.youtube.com/watch?v=" + id, true
+    }
+    return "", false
+}
+
+func isValidYouTubeURL(raw string) bool {
+    _, ok := extractYouTubeVideoID(raw)
+    return ok
 }
