@@ -47,6 +47,7 @@ func main() {
     mux.HandleFunc("/admin/cancel/", basicAuthMiddleware(handleAdminCancel))
     mux.HandleFunc("/admin/delete/", basicAuthMiddleware(handleAdminDelete))
     mux.HandleFunc("/admin/config", basicAuthMiddleware(handleAdminConfig))
+    mux.HandleFunc("/admin/logs", basicAuthMiddleware(handleAdminLogs))
 
     // Graceful shutdown setup
     setupGracefulShutdown()

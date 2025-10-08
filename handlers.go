@@ -630,6 +630,8 @@ func handleAdminData(w http.ResponseWriter, r *http.Request) {
         "workers":        WorkerPoolSize,
         "queue_capacity": JobQueueCapacity,
         "rate_limit":     RequestsPerSecond,
+        "burst":          BurstSize,
+        "maintenance":    MaintenanceMode,
         "uptime_seconds": time.Since(serverStartTime).Seconds(),
         "success_rate":   calculateSuccessRate(),
         "avg_processing_s": getAvgProcessingTime(),
@@ -709,4 +711,32 @@ func handleAdminConfig(w http.ResponseWriter, r *http.Request) {
     }
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(map[string]interface{}{"maintenance":MaintenanceMode,"requests_per_second":RequestsPerSecond,"burst_size":BurstSize})
+}
+
+// SSE live logs
+func handleAdminLogs(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+    w.Header().Set("Content-Type", "text/event-stream")
+    w.Header().Set("Cache-Control", "no-cache")
+    w.Header().Set("Connection", "keep-alive")
+    // emit last lines
+    adminLogs.Lock()
+    for _, ln := range adminLogs.lines {
+        fmt.Fprintf(w, "data: %s\n\n", ln)
+    }
+    fl, _ := w.(http.Flusher)
+    if fl != nil { fl.Flush() }
+    ch := subscribeAdminLogs()
+    adminLogs.Unlock()
+    notify := w.(http.CloseNotifier).CloseNotify()
+    for {
+        select {
+        case ln := <-ch:
+            fmt.Fprintf(w, "data: %s\n\n", ln)
+            if fl != nil { fl.Flush() }
+        case <-notify:
+            unsubscribeAdminLogs(ch)
+            return
+        }
+    }
 }
