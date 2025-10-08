@@ -43,6 +43,12 @@ var (
         scheduled  map[string]bool
     }{inProgress: make(map[string]int), scheduled: make(map[string]bool)}
 
+    // Job cancellation registry
+    jobCancels = struct {
+        sync.Mutex
+        m map[string]context.CancelFunc
+    }{m: make(map[string]context.CancelFunc)}
+
     // Redis client
     redisClient *redis.Client
 

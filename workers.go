@@ -35,6 +35,13 @@ func processJob(job *ConversionJob, workerID int) {
     }
     outputPath := filepath.Join(outputDir, job.ID+".mp3")
 
+    // Per-job context with timeout for cancellation/long-running protection
+    jobCtx, jobCancel := context.WithTimeout(ctx, 30*time.Minute)
+    jobCancels.Lock()
+    jobCancels.m[job.ID] = jobCancel
+    jobCancels.Unlock()
+    defer func(){ jobCancels.Lock(); delete(jobCancels.m, job.ID); jobCancels.Unlock(); jobCancel() }()
+
     audioURL, meta, err := getAudioStreamFromYTDLP(job.URL)
     if err != nil {
         handleJobFailure(job, err, "yt-dlp stream extraction failed")

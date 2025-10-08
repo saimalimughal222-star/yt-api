@@ -205,6 +205,25 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(response)
 }
 
+// DELETE /cancel/{job_id}
+func handleCancel(w http.ResponseWriter, r *http.Request) {
+    enableCORS(w)
+    if r.Method == http.MethodOptions { w.WriteHeader(http.StatusOK); return }
+    if r.Method != http.MethodDelete { http.Error(w, "Invalid request method", http.StatusMethodNotAllowed); return }
+    jobID := filepath.Base(r.URL.Path)
+    if jobID == "" { http.Error(w, "Missing job ID", http.StatusBadRequest); return }
+    jobCancels.Lock()
+    cancelFn, ok := jobCancels.m[jobID]
+    jobCancels.Unlock()
+    if !ok {
+        http.Error(w, "Job not running or not found", http.StatusNotFound)
+        return
+    }
+    cancelFn()
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]string{"canceled": jobID})
+}
+
 func handleDownload(w http.ResponseWriter, r *http.Request) {
     enableCORS(w)
 
@@ -307,7 +326,7 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
     enableCORS(w)
     if r.Method != http.MethodGet { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
     w.Header().Set("Content-Type", "text/html; charset=utf-8")
-    io.WriteString(w, `<!doctype html><html><head><meta charset="utf-8"><title>YT MP3 API Docs</title><style>body{font-family:sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;}</style></head><body>
+    io.WriteString(w, `<!doctype html><html><head><meta charset="utf-8"><title>YT MP3 API Docs</title><style>body{font-family:sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;}code{background:#f5f5f5;padding:2px 4px;border-radius:3px}</style></head><body>
     <h1>YouTube to MP3 API - Documentation</h1>
     <p>High-level guide for backend integration.</p>
     <h2>Endpoints</h2>
@@ -315,7 +334,13 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
       <li><code>POST /extract</code> - Start conversion. Body: { url, idempotency_key?, callback_url? }</li>
       <li><code>GET /status/{job_id}</code> - Check job status.</li>
       <li><code>GET /download/{job_id}.mp3</code> - Download MP3 (Range supported).</li>
+      <li><code>DELETE /cancel/{job_id}</code> - Cancel a running job.</li>
       <li><code>GET /health</code>, <code>/metrics</code>, <code>/stats</code> - Monitoring.</li>
+    </ul>
+    <h2>Deployment Guides</h2>
+    <ul>
+      <li><a href="/README_HIGH_TRAFFIC.md" target="_blank">High-Traffic Tuning</a></li>
+      <li><a href="/README_UBUNTU_DEPLOY.md" target="_blank">Ubuntu Deployment</a></li>
     </ul>
     <h2>Auth</h2>
     <p>If enabled, send <code>X-API-Key: &lt;your_key&gt;</code> header.</p>
@@ -325,6 +350,19 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
       <li>Repeated requests for same video are deduped.</li>
       <li>Files are short-lived and may be deleted ~10 minutes after completion.</li>
     </ul>
+    <h2>Logs & Troubleshooting</h2>
+    <pre>Systemd live:   sudo journalctl -u ytmp3-api -f
+Recent hour:    sudo journalctl -u ytmp3-api --since "1 hour ago"
+Service status: sudo systemctl status ytmp3-api --no-pager
+
+No-systemd logs: sudo tail -f /opt/ytmp3-api/ytmp3-api.log
+PID file:        sudo cat /opt/ytmp3-api/ytmp3-api.pid
+
+Nginx logs:      sudo tail -f /var/log/nginx/access.log /var/log/nginx/error.log
+
+Redis checks:    redis-cli ping
+                 redis-cli info | head
+    </pre>
     <p>Frontend-focused docs: <a href="/docs/frontend">/docs/frontend</a></p>
     </body></html>`)
 }
