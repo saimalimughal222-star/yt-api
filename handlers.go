@@ -50,6 +50,23 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
         }
     }
 
+    // Idempotency key check
+    if req.IdempotencyKey != "" {
+        if jid, err := getJobIDByIdempotency(req.IdempotencyKey); err == nil && jid != "" {
+            if j, err2 := getJobFromRedis(jid); err2 == nil && j != nil {
+                w.Header().Set("Content-Type", "application/json")
+                json.NewEncoder(w).Encode(map[string]interface{}{
+                    "job_id": j.ID,
+                    "status": string(j.Status),
+                    "download_url": j.DownloadURL,
+                    "check_status_endpoint": fmt.Sprintf("http://localhost:8080/status/%s", j.ID),
+                    "canonical_url": j.URL,
+                })
+                return
+            }
+        }
+    }
+
     // Prefer Redis-based dedupe first
     if jobIDFromURL, err := getJobIDByURL(req.URL); err == nil && jobIDFromURL != "" {
         if jobByRedis, err2 := getJobFromRedis(jobIDFromURL); err2 == nil && jobByRedis != nil && jobByRedis.Status == StatusCompleted {

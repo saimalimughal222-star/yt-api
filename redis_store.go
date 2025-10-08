@@ -89,3 +89,20 @@ func deleteJobFromRedis(jobID string) {
 func xxhashString(s string) uint64 {
     return xxhash.Sum64String(s)
 }
+
+// Idempotency key mapping
+func saveIdempotencyKey(idemKey, jobID string) error {
+    if redisClient == nil {
+        return nil
+    }
+    key := fmt.Sprintf("idem:%x", xxhashString(idemKey))
+    return redisClient.Set(ctx, key, jobID, JobExpiration).Err()
+}
+
+func getJobIDByIdempotency(idemKey string) (string, error) {
+    if redisClient == nil {
+        return "", nil
+    }
+    key := fmt.Sprintf("idem:%x", xxhashString(idemKey))
+    return redisClient.Get(ctx, key).Result()
+}
