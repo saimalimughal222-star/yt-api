@@ -126,25 +126,42 @@ validate_redis_addr() {
   [[ "$1" =~ ^[^:]+:[0-9]+$ ]]
 }
 
+echo
+echo "=== Concurrency & App Rate Limits ==="
+echo "Worker pool size: how many videos convert in parallel on this server."
+echo "Job queue capacity: how many requests can wait in queue if workers are busy."
+echo "App rate limit (req/s): global requests per second this instance accepts."
+echo "App rate burst: short spikes allowed above the steady rate."
 WORKER_POOL_SIZE=$(prompt_int "Worker pool size" "20")
 JOB_QUEUE_CAPACITY=$(prompt_int "Job queue capacity" "1000")
 REQUESTS_PER_SECOND=$(prompt_int "App rate limit (req/s)" "100")
 BURST_SIZE=$(prompt_int "App rate burst" "200")
 
 # Abuse protection & auth
+echo
+echo "=== Authentication & Abuse Protection ==="
+echo "Require API key: if true, every request must include X-API-Key header."
+echo "API keys: comma-separated shared secrets that clients must send."
 REQUIRE_API_KEY_ANS=$(read_with_default "Require API key? (true/false)" "false")
 if [[ "${REQUIRE_API_KEY_ANS}" == "true" ]]; then
   API_KEYS=$(read_with_default "Enter comma-separated API keys" "")
 else
   API_KEYS=""
 fi
+echo "Per-IP limits restrict how fast each client IP can call the API."
 PER_IP_RPS=$(prompt_int "Per-IP request rate (req/s)" "10")
 PER_IP_BURST=$(prompt_int "Per-IP burst" "20")
 
 # Networking / CORS
+echo
+echo "=== CORS (Cross-Origin Resource Sharing) ==="
+echo "Allowed origins: which websites can call your API from the browser. Use * to allow all, or list domains."
 ALLOWED_ORIGINS=$(read_with_default "Allowed origins for CORS (comma or *)" "*")
 
 # Redis
+echo
+echo "=== Redis (Job storage and caching) ==="
+echo "Redis stores job status, deduplication info, and short-lived metadata."
 if ask_yes_no "Use LOCAL Redis at localhost:6379?" Y; then
   REDIS_ADDR="localhost:6379"
 else
@@ -156,15 +173,26 @@ else
 fi
 
 # Durations (use Go duration format: 24h, 30s, etc.)
+echo
+echo "=== Durations & Timeouts ==="
+echo "Job expiration: how long to keep job metadata in Redis (e.g., 24h)."
+echo "Health check interval: how often the app runs internal health checks."
+echo "Fast-path wait: time the /extract endpoint waits for quick conversions before returning a job_id."
 JOB_EXPIRATION=$(prompt_duration "Job expiration (metadata TTL)" "24h")
 HEALTH_CHECK_INTERVAL=$(prompt_duration "Health check interval" "30s")
 FAST_PATH_WAIT=$(prompt_duration "Fast-path wait (for quick jobs)" "8s")
 
 # Retry backoff
-BACKOFF_BASE_SECONDS=$(prompt_int "Backoff base seconds" "5")
-BACKOFF_MAX_SECONDS=$(prompt_int "Backoff max seconds" "60")
+echo
+echo "=== Retry Backoff ==="
+echo "When yt-dlp or ffmpeg fails temporarily, retries wait with exponential backoff."
+BACKOFF_BASE_SECONDS=$(prompt_int "Backoff base seconds (start wait)" "5")
+BACKOFF_MAX_SECONDS=$(prompt_int "Backoff max seconds (maximum wait)" "60")
 
 # Max video duration (minutes); blank to disable
+echo
+echo "=== Content Limits ==="
+echo "Max video duration: longest video allowed (in minutes). Use 0 for no limit."
 MAX_DURATION_MIN=$(prompt_int "Max video duration minutes (0 = no limit)" "90")
 
 # Optional: clear previous data before starting (Redis keys and downloads)
@@ -180,6 +208,9 @@ if ask_yes_no "Clear existing data now (Redis job/url keys and downloads folder)
   fi
 fi
 
+echo
+echo "=== Nginx Reverse Proxy ==="
+echo "Nginx fronts the API, adds security headers and rate limits, and can enable HTTPS."
 if ask_yes_no "Configure Nginx reverse proxy (domain or IP)?" Y; then
   DOMAIN=$(read_with_default "Enter domain (blank = use server IP)" "")
   # Global limits (http context)
@@ -229,6 +260,7 @@ EOF
     nginx -t && nginx -s reload || true
   fi
 
+  echo "If you have a domain pointing to this server, you can enable HTTPS with Let's Encrypt."
   if [[ -n "${DOMAIN}" ]] && ask_yes_no "Enable HTTPS for ${DOMAIN} with Let's Encrypt?" N; then
     EMAIL=$(read_with_default "Admin email for Let's Encrypt" "you@example.com")
     apt-get install -y certbot python3-certbot-nginx
