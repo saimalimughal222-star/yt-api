@@ -337,6 +337,7 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
       <li><code>GET /status/{job_id}</code> - Check job status.</li>
       <li><code>GET /download/{job_id}.mp3</code> - Download MP3 (Range supported).</li>
       <li><code>DELETE /cancel/{job_id}</code> - Cancel a running job.</li>
+      <li><code>DELETE /delete/{job_id}</code> - Delete job and file (idempotent).</li>
       <li><code>GET /health</code>, <code>/metrics</code>, <code>/stats</code> - Monitoring.</li>
     </ul>
     <h2>Deployment Guides</h2>

@@ -94,16 +94,21 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
             job = rj
         }
     }
-    if job == nil {
-        http.Error(w, "Job not found", http.StatusNotFound)
-        return
-    }
-    if job.FilePath != "" {
+    // Attempt to remove file by known path or default path
+    if job != nil && job.FilePath != "" {
         _ = os.Remove(job.FilePath)
+    } else {
+        _ = os.Remove(filepath.Join("downloads", jobID+".mp3"))
     }
+    // Remove in-memory
     jobStore.Lock()
     delete(jobStore.jobs, jobID)
     jobStore.Unlock()
+    // Remove Redis job and URL mapping
+    deleteJobFromRedis(jobID)
+    if job != nil && job.URL != "" {
+        removeURLMapping(job.URL)
+    }
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(map[string]string{"deleted": jobID})
 }
