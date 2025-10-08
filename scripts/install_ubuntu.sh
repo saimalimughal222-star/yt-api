@@ -94,6 +94,38 @@ JOB_QUEUE_CAPACITY=$(read_with_default "Job queue capacity" "1000")
 REQUESTS_PER_SECOND=$(read_with_default "App rate limit (req/s)" "100")
 BURST_SIZE=$(read_with_default "App rate burst" "200")
 
+# Abuse protection & auth
+REQUIRE_API_KEY_ANS=$(read_with_default "Require API key? (true/false)" "false")
+if [[ "${REQUIRE_API_KEY_ANS}" == "true" ]]; then
+  API_KEYS=$(read_with_default "Enter comma-separated API keys" "")
+else
+  API_KEYS=""
+fi
+PER_IP_RPS=$(read_with_default "Per-IP request rate (req/s)" "10")
+PER_IP_BURST=$(read_with_default "Per-IP burst" "20")
+
+# Networking / CORS
+ALLOWED_ORIGINS=$(read_with_default "Allowed origins for CORS (comma or *)" "*")
+
+# Redis
+if ask_yes_no "Use LOCAL Redis at localhost:6379?" Y; then
+  REDIS_ADDR="localhost:6379"
+else
+  REDIS_ADDR=$(read_with_default "Enter Redis address host:port" "localhost:6379")
+fi
+
+# Durations (use Go duration format: 24h, 30s, etc.)
+JOB_EXPIRATION=$(read_with_default "Job expiration (metadata TTL)" "24h")
+HEALTH_CHECK_INTERVAL=$(read_with_default "Health check interval" "30s")
+FAST_PATH_WAIT=$(read_with_default "Fast-path wait (for quick jobs)" "8s")
+
+# Retry backoff
+BACKOFF_BASE_SECONDS=$(read_with_default "Backoff base seconds" "5")
+BACKOFF_MAX_SECONDS=$(read_with_default "Backoff max seconds" "60")
+
+# Max video duration (minutes); blank to disable
+MAX_DURATION_MIN=$(read_with_default "Max video duration minutes (blank = no limit)" "90")
+
 # Optional: clear previous data before starting (Redis keys and downloads)
 if ask_yes_no "Clear existing data now (Redis job/url keys and downloads folder)?" Y; then
   echo "Clearing downloads in ${INSTALL_DIR}/downloads ..."
@@ -110,9 +142,11 @@ fi
 if ask_yes_no "Configure Nginx reverse proxy (domain or IP)?" Y; then
   DOMAIN=$(read_with_default "Enter domain (blank = use server IP)" "")
   # Global limits (http context)
-  cat >"${NGINX_LIMITS}" <<'EOF'
-limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
-limit_req_zone $binary_remote_addr zone=download_limit:10m rate=5r/s;
+  NGINX_API_RPS=$(read_with_default "Nginx limit for /extract and /status (req/s)" "10")
+  NGINX_DOWNLOAD_RPS=$(read_with_default "Nginx limit for /download (req/s)" "5")
+  cat >"${NGINX_LIMITS}" <<EOF
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=${NGINX_API_RPS}r/s;
+limit_req_zone $binary_remote_addr zone=download_limit:10m rate=${NGINX_DOWNLOAD_RPS}r/s;
 limit_conn_zone $binary_remote_addr zone=conn_limit_per_ip:10m;
 EOF
 
@@ -174,15 +208,23 @@ fi
 REQUESTS_PER_SECOND=${REQUESTS_PER_SECOND}
 BURST_SIZE=${BURST_SIZE}
 cat >"${ENV_FILE}" <<EOF
-REDIS_ADDR=localhost:6379
+REDIS_ADDR=${REDIS_ADDR}
 REQUESTS_PER_SECOND=${REQUESTS_PER_SECOND}
 BURST_SIZE=${BURST_SIZE}
 WORKER_POOL_SIZE=${WORKER_POOL_SIZE}
 JOB_QUEUE_CAPACITY=${JOB_QUEUE_CAPACITY}
 MAX_JOB_RETRIES=3
-# Prefer JOB_EXPIRATION (e.g., 24h). Keep HOURS for backward-compat.
-JOB_EXPIRATION=24h
-JOB_EXPIRATION_HOURS=24
+JOB_EXPIRATION=${JOB_EXPIRATION}
+HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL}
+FAST_PATH_WAIT=${FAST_PATH_WAIT}
+ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+REQUIRE_API_KEY=${REQUIRE_API_KEY_ANS}
+API_KEYS=${API_KEYS}
+PER_IP_RPS=${PER_IP_RPS}
+PER_IP_BURST=${PER_IP_BURST}
+BACKOFF_BASE_SECONDS=${BACKOFF_BASE_SECONDS}
+BACKOFF_MAX_SECONDS=${BACKOFF_MAX_SECONDS}
+MAX_DURATION_MIN=${MAX_DURATION_MIN}
 EOF
 chmod 0644 "${ENV_FILE}"
 
