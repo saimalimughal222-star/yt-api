@@ -12,6 +12,7 @@ import (
 
     "github.com/google/uuid"
     "strings"
+    "strconv"
 )
 
 func handleExtract(w http.ResponseWriter, r *http.Request) {
