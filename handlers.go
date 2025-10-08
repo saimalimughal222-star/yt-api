@@ -13,6 +13,7 @@ import (
     "github.com/google/uuid"
     "strings"
     "strconv"
+    "sort"
 )
 
 func handleExtract(w http.ResponseWriter, r *http.Request) {
@@ -386,20 +387,142 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodGet { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
     w.Header().Set("Content-Type", "text/html; charset=utf-8")
     io.WriteString(w, `<!doctype html><html><head><meta charset="utf-8"><title>Admin</title>
-    <style>body{font-family:sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px}</style>
+    <style>
+    :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--ok:#10b981;--warn:#f59e0b;--bad:#ef4444;--txt:#e5e7eb}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:var(--bg);color:var(--txt);margin:0}
+    header{padding:16px 24px;border-bottom:1px solid #1f2937;display:flex;align-items:center;gap:16px}
+    .wrap{max-width:1200px;margin:0 auto;padding:24px}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+    .card{background:var(--card);border:1px solid #1f2937;border-radius:10px;padding:16px}
+    .card h3{margin:0 0 8px 0;font-size:14px;color:var(--muted)}
+    .big{font-size:28px;font-weight:600}
+    .row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-bottom:1px solid #1f2937;padding:8px;text-align:left;font-size:13px}
+    tr:hover td{background:#0b1220}
+    input,button,select{background:#0b1220;color:var(--txt);border:1px solid #1f2937;border-radius:8px;padding:8px}
+    button{cursor:pointer}
+    .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+    a{color:#60a5fa}
+    </style>
     <script>
+    async function fetchJSON(u){
+      const r = await fetch(u);
+      if(!r.ok) throw new Error('http '+r.status);
+      return r.json();
+    }
     async function refresh(){
-      const h = await fetch('/health',{headers:{'Authorization':localStorage.auth||''}}).then(r=>r.json()).catch(()=>({}));
-      const m = await fetch('/metrics',{headers:{'Authorization':localStorage.auth||''}}).then(r=>r.json()).catch(()=>({}));
-      document.getElementById('health').textContent = JSON.stringify(h,null,2);
-      document.getElementById('metrics').textContent = JSON.stringify(m,null,2);
+      try{
+        const d = await fetchJSON('/admin/data');
+        document.getElementById('uptime').textContent = d.health.uptime;
+        document.getElementById('workers').textContent = d.health.workers;
+        document.getElementById('active').textContent = d.health.active_jobs;
+        document.getElementById('queued').textContent = d.health.queued_jobs;
+        document.getElementById('completed').textContent = d.health.completed_jobs;
+        document.getElementById('failed').textContent = d.health.failed_jobs;
+        document.getElementById('rate').textContent = d.metrics.rate_limit;
+        document.getElementById('queueCap').textContent = d.metrics.queue_capacity;
+        document.getElementById('mem').textContent = d.health.memory_usage;
+        renderJobs(d.jobs);
+      }catch(e){console.error(e)}
+    }
+    function renderJobs(items){
+      const q = document.getElementById('q').value.toLowerCase();
+      const st = document.getElementById('filter').value;
+      const tbody = document.getElementById('jobs');
+      tbody.innerHTML='';
+      items.forEach(j=>{
+        if(q && !(j.id.includes(q)||j.url.includes(q)||j.status.includes(q))) return;
+        if(st && j.status!==st) return;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${j.id}</td><td>${j.status}</td><td>${(j.url||'').slice(0,80)}</td><td>${j.created_at}</td>
+        <td><div class="row"><button onclick="cancelJob('${j.id}')">Cancel</button><button onclick="deleteJob('${j.id}')">Delete</button></div></td>`;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('count').textContent=items.length;
+    }
+    async function cancelJob(id){
+      if(!confirm('Cancel job '+id+'?')) return;
+      const r = await fetch('/admin/cancel/'+id,{method:'DELETE'});
+      if(r.ok) refresh(); else alert('Cancel failed');
+    }
+    async function deleteJob(id){
+      if(!confirm('Delete job '+id+'?')) return;
+      const r = await fetch('/admin/delete/'+id,{method:'DELETE'});
+      if(r.ok) refresh(); else alert('Delete failed');
     }
     setInterval(refresh, 3000);
     window.onload=refresh;
     </script></head><body>
-    <h1>Admin Dashboard</h1>
-    <p>Live server state, health, and metrics.</p>
-    <h2>Health</h2><pre id="health">loading...</pre>
-    <h2>Metrics</h2><pre id="metrics">loading...</pre>
+    <header><h2>Admin Dashboard</h2><div class="row"><a href="/docs">Docs</a><a href="/docs/frontend">Frontend Docs</a></div></header>
+    <div class="wrap">
+      <div class="grid">
+        <div class="card"><h3>Uptime</h3><div class="big" id="uptime">--</div></div>
+        <div class="card"><h3>Workers</h3><div class="big" id="workers">--</div></div>
+        <div class="card"><h3>Active</h3><div class="big" id="active">--</div></div>
+        <div class="card"><h3>Queued</h3><div class="big" id="queued">--</div></div>
+        <div class="card"><h3>Completed</h3><div class="big" id="completed">--</div></div>
+        <div class="card"><h3>Failed</h3><div class="big" id="failed">--</div></div>
+        <div class="card"><h3>Rate Limit</h3><div class="big" id="rate">--</div></div>
+        <div class="card"><h3>Queue Capacity</h3><div class="big" id="queueCap">--</div></div>
+        <div class="card" style="grid-column: span 4"><h3>Memory</h3><div id="mem">--</div></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <div class="row"><input id="q" placeholder="Search jobs (id/url/status)" oninput="refresh()"/><select id="filter" onchange="refresh()"><option value="">All</option><option>pending</option><option>processing</option><option>completed</option><option>failed</option></select></div>
+          <div>Total jobs displayed: <span id="count">0</span></div>
+        </div>
+        <table style="margin-top:8px"><thead><tr><th>ID</th><th>Status</th><th>URL</th><th>Created</th><th>Actions</th></tr></thead><tbody id="jobs"></tbody></table>
+      </div>
+    </div>
     </body></html>`)
 }
+
+// Admin data snapshot (health, metrics, stats, jobs limited)
+func handleAdminData(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+    // Health like
+    health := HealthStatus{
+        Status:        "healthy",
+        ActiveJobs:    atomic.LoadInt64(&activeJobs),
+        QueuedJobs:    atomic.LoadInt64(&queuedJobs),
+        CompletedJobs: atomic.LoadInt64(&completedJobs),
+        FailedJobs:    atomic.LoadInt64(&failedJobs),
+        Workers:       WorkerPoolSize,
+        Uptime:        time.Since(serverStartTime).String(),
+        MemoryUsage:   getMemoryUsage(),
+    }
+    if health.ActiveJobs >= int64(WorkerPoolSize) || health.QueuedJobs > int64(JobQueueCapacity/2) {
+        health.Status = "overloaded"
+    }
+    metrics := map[string]interface{}{
+        "active_jobs":    health.ActiveJobs,
+        "queued_jobs":    health.QueuedJobs,
+        "completed_jobs": health.CompletedJobs,
+        "failed_jobs":    health.FailedJobs,
+        "workers":        WorkerPoolSize,
+        "queue_capacity": JobQueueCapacity,
+        "rate_limit":     RequestsPerSecond,
+        "uptime_seconds": time.Since(serverStartTime).Seconds(),
+        "success_rate":   calculateSuccessRate(),
+        "avg_processing_s": getAvgProcessingTime(),
+    }
+    // Jobs list (limit 200, sorted by CreatedAt desc)
+    jobStore.RLock()
+    arr := make([]*ConversionJob, 0, len(jobStore.jobs))
+    for _, j := range jobStore.jobs { arr = append(arr, j) }
+    jobStore.RUnlock()
+    sort.Slice(arr, func(i,j int) bool { return arr[i].CreatedAt.After(arr[j].CreatedAt) })
+    if len(arr) > 200 { arr = arr[:200] }
+    type jdto struct{ ID, URL, Status, CreatedAt string }
+    out := make([]jdto, 0, len(arr))
+    for _, j := range arr {
+        out = append(out, jdto{ID:j.ID, URL:j.URL, Status:string(j.Status), CreatedAt:j.CreatedAt.Format(time.RFC3339)})
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{"health":health,"metrics":metrics,"jobs":out})
+}
+
+// Admin wrappers for actions
+func handleAdminCancel(w http.ResponseWriter, r *http.Request) { handleCancel(w,r) }
+func handleAdminDelete(w http.ResponseWriter, r *http.Request) { handleDelete(w,r) }
